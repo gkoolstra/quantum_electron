@@ -276,3 +276,36 @@ def get_quantum_spectrum(potential_dict, voltages, plot_wavefunctions=False):
         classification.append(well)
                 
     return mode_frequencies, np.array(classification)
+
+def plot_potential(potential_dict, voltages):
+    # potential_dict --> xlist, ylist, electrode 1, electrode 2, etc
+    # voltages --> electrode 1, electrode 2, etc.
+    for k, key in enumerate(list(voltages.keys())):
+        if k == 0: 
+            potential = potential_dict[key] * voltages[key] 
+        else:
+            potential += potential_dict[key] * voltages[key]
+
+    zdata = -potential.T
+
+    fig = plt.figure(figsize=(7, 5))
+    ax = fig.add_subplot(111)
+    plt.pcolormesh(potential_dict['xlist'], potential_dict['ylist'], zdata, cmap=plt.cm.RdYlBu_r)
+    plt.colorbar()
+    
+    xidx, yidx = np.unravel_index(zdata.argmin(), zdata.shape)
+    plt.plot(potential_dict['xlist'][yidx], potential_dict['ylist'][xidx], '*', color='white')
+
+    zoom = 1
+
+    ax.set_xlim(-zoom, zoom)
+    ax.set_ylim(-zoom, zoom)
+
+    ax.set_aspect('equal')
+
+    contours = [np.round(np.min(zdata), 3) +k*1e-3 for k in range(5)]
+    CS = plt.contour(potential_dict['xlist'], potential_dict['ylist'], zdata, levels=contours)
+    ax.clabel(CS, CS.levels, inline=True, fontsize=10)
+
+    plt.xlabel("x")
+    plt.ylabel("y")
