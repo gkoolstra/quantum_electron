@@ -448,8 +448,13 @@ class QuantumAnalysis:
             fig.tight_layout()
                     
         return self.mode_frequencies
-    
+        
     def get_anharmonicity(self) -> float:
+        """Calculate the anharmonicity. The anharmonicity here is defined as (f|0x2y> - f|0x1y>) - (f|0x1y> - f|0x0y>) 
+
+        Returns:
+            float: Anharmonicity in Hz.
+        """
         assert self.solved is True, print("You must solve the Schrodinger equation first!")
         
         frequencies = self.mode_frequencies
