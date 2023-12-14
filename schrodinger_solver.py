@@ -13,10 +13,6 @@ from typing import Dict, List, Optional
 from numpy.typing import ArrayLike
 from itertools import product
 
-m_e = 9.11e-31
-q_e = 1.602e-19
-hbar = 1.055e-34
-
 class Schrodinger:
     """Abstract class for solving the 1D and 2D Schrodinger equation 
     using finite differences and sparse matrices"""
@@ -256,226 +252,304 @@ def find_minimum_location(potential_dict: Dict[str, ArrayLike], voltages: Dict[s
     else:
         return potential_dict['xlist'][yidx], potential_dict['ylist'][xidx]
 
-def get_quantum_spectrum(potential_dict: Dict[str, ArrayLike], voltages: Dict[str, float], coor: List[float]=[0,0], 
-                         dxdy: List[float]=[1, 2], plot_wavefunctions: bool=False, 
-                         axes_zoom: Optional[float]=None) -> tuple[ArrayLike, ArrayLike]:
-    """Returns the frequencies of the first N eigenmodes for a single electron trapped in a potential. 
-
-    Args:
-        potential_dict (Dict[str, ArrayLike]): Dictionary containing at least the keys also present in the voltages dictionary.
-        The 2d-array associated with each key contains the coupling coefficient for the respective electrode in space.
-        voltages (Dict[str, float]): Dictionary with electrode names as keys. The value associated with each key is the voltage
-        applied to each electrode
-        coor (List[float, float], optional): Center of the solution window (in microns), this should include the potential minimum. Defaults to [0,0].
-        dxdy (List[float, float], optional): width of the solution window for x and y (measured in microns). Defaults to [1, 2].
-        plot_wavefunctions (bool, optional): Whether to plot the wave functions or simply return the frequencies. Defaults to False.
-        axes_zoom (Optional[float], optional): Axes extent around the wavefunction. If None the axes are set by coor and dxdy. Defaults to None.
-
-    Returns:
-        tuple[ArrayLike, ArrayLike]: Eigenfrequencies of the first N motional modes in Hz, and a classification of the mode.
+class QuantumAnalysis: 
+    """This class solves the Schrodinger equation for a single electron on helium. Typical workflow: 
+    
+    qa = QuantumAnalysis(potential_dict=potential_dict, voltage_dict=voltage_dict)
+    qa.get_quantum_spectrum(coor=None, dxdy=[.8, .8])
     """
     
-    if coor is None:
-        coor = find_minimum_location(potential_dict, voltages)
-    
-    # Note that xsol and ysol determine the x and y points for which you want to solve the Schrodinger equation
-    xsol = np.linspace(coor[0]-dxdy[0]/2, coor[0]+dxdy[0]/2, 151) * 1e-6
-    y_symmetric = construct_symmetric_y(coor[1]-dxdy[1]/2, 50) * 1e-6
-    ysol = np.zeros(2 * len(y_symmetric))
-    ysol[:len(y_symmetric)] = y_symmetric
-    ysol[len(y_symmetric):] = -y_symmetric[::-1]
-    
-    potential = make_potential(potential_dict, voltages)
-    zdata = -potential.T
+    def __init__(self, potential_dict: Dict[str, ArrayLike], voltage_dict: Dict[str, float]):
+        """Class for solving quantum properties of a single electron trapped in a dot
 
-    # By using the interpolator we create a function that can evaluate the potential energy for an electron at arbitrary x,y
-    # This is useful if the original potential data is sparsely sampled (e.g. due to FEM time constraints)
-    potential_function = scipy.interpolate.RegularGridInterpolator((potential_dict['xlist']*1e-6, 
-                                                                    potential_dict['ylist']*1e-6), 
-                                                                   -potential)
-    # Number of eigenfrequencies to calculate
-    N_evals = 10
+        Args:
+            potential_dict (Dict[str, ArrayLike]): Dictionary containing at least the keys also present in the voltages dictionary.
+            The 2d-array associated with each key contains the coupling coefficient for the respective electrode in space.
+            voltage_dict (Dict[str, float]): Dictionary with electrode names as keys. The value associated with each key is the voltage
+            applied to each electrode
+        """
+        self.potential_dict = potential_dict
+        self.voltage_dict = voltage_dict
+        self.solved = False
+        
+    def update_voltages(self, voltage_dict: Dict[str, float]):
+        """Update the voltage dictionary
 
-    # Note that the solution is sampled over the arrays xsol, ysol which can be set indepently from the FEM x and y points.
-    se = SingleElectron(xsol, ysol, potential_function=potential_function, solve=False)
-    se.sparsify(num_levels=N_evals)
-    Evals, Evecs = se.solve(sparse_args=se.sparse_args)
+        Args:
+            voltage_dict (Dict[str, float]): Dictionary with electrode names as keys. The value associated with each key is the voltage
+            applied to each electrode
+        """
+        self.voltage_dict = voltage_dict
+        self.solved = False
+        
+    def solve_system(self, coor: List[float]=[0,0], dxdy: List[float]=[1, 2], N_evals: float=10, n_x: int=150, n_y: int=100) -> None:
+        """Solve the Schrodinger equation for a given set of voltages.
 
-    Psis = se.get_2Dpsis(N_evals)
-    mode_frequencies = (Evals - Evals[0]) * hbar**2 / (2 * q_e * m_e) * q_e / (2 * np.pi * hbar)
+        Args:
+            coor (List[float, float], optional): Center of the solution window (in microns), this should include the potential minimum. Defaults to [0,0].
+            dxdy (List[float, float], optional): width of the solution window for x and y (measured in microns). Defaults to [1, 2].
+            N_evals (float, optional): Number of eigenvalues to consider. Defaults to 10.
+        """
+        # If not specified as a function argument, coor will be the minimum of the potential
+        if coor is None:
+            coor = find_minimum_location(self.potential_dict, self.voltage_dict)
+        
+        # Note that xsol and ysol determine the x and y points for which you want to solve the Schrodinger equation
+        self.xsol = np.linspace(coor[0]-dxdy[0]/2, coor[0]+dxdy[0]/2, n_x) * 1e-6
+        y_symmetric = construct_symmetric_y(coor[1]-dxdy[1]/2, n_y) * 1e-6
+        self.ysol = np.zeros(2 * len(y_symmetric))
+        self.ysol[:len(y_symmetric)] = y_symmetric
+        self.ysol[len(y_symmetric):] = -y_symmetric[::-1]
+        
+        potential = make_potential(self.potential_dict, self.voltage_dict)
 
-    classification = list()
-    if plot_wavefunctions:
-        fig = plt.figure(figsize=(12.,6.))
+        # By using the interpolator we create a function that can evaluate the potential energy for an electron at arbitrary x,y
+        # This is useful if the original potential data is sparsely sampled (e.g. due to FEM time constraints)
+        potential_function = scipy.interpolate.RegularGridInterpolator((self.potential_dict['xlist']*1e-6, 
+                                                                        self.potential_dict['ylist']*1e-6), 
+                                                                       -potential)
 
-    for k in range(6):
-        if plot_wavefunctions:
-            plt.subplot(2, 3, k+1)
-            plt.pcolormesh(xsol/1e-6, ysol/1e-6, Psis[k], cmap=plt.cm.RdBu_r, 
-                           vmin=-np.max(np.abs(Psis[k])), 
-                           vmax=np.max(np.abs(Psis[k])))
-            cbar = plt.colorbar()
-            tick_locator = matplotlib.ticker.MaxNLocator(nbins=4)
-            cbar.locator = tick_locator
-            cbar.update_ticks()
+        # Note that the solution is sampled over the arrays xsol, ysol which can be set indepently from the FEM x and y points.
+        se = SingleElectron(self.xsol, self.ysol, potential_function=potential_function, solve=False)
+        se.sparsify(num_levels=N_evals)
+        Evals, Evecs = se.solve(sparse_args=se.sparse_args)
+
+        self.Psis = se.get_2Dpsis(N_evals)
+        self.mode_frequencies = (Evals - Evals[0]) * hbar**2 / (2 * q_e * m_e) * q_e / (2 * np.pi * hbar)
+        
+        self.solved = True
+        
+    def classify_wavefunction_by_well(self) -> ArrayLike:
+        """This function classifies the wavefunctions by well. If the potential has a double well, the wave function will be marked with +1 or -1. 
+        If there is a well it's assumed to be in the y-direction, and +1 is associated with positive y and -1 with negative. 0 is a single well.
+        
+        Returns:
+            ArrayLike: array with the same length as Psis.
+        """
+        assert self.solved is True, print("You must solve the Schrodinger equation first!")
         
         # classify by finding the center of mass of the wave function
-        X, Y = np.meshgrid(xsol, ysol)
-        y_com = np.mean(np.abs(Psis[k]) * Y) / np.mean(np.abs(Psis[k]))
-        x_com = np.mean(np.abs(Psis[k]) * X) / np.mean(np.abs(Psis[k]))
+        X, Y = np.meshgrid(self.xsol, self.ysol)
         
-        if y_com > 0.1e-6:
-            well = +1
-        elif y_com < -0.1e-6:
-            well = -1
-        else: 
-            well = 0
+        well_classification = list()
+        for k in range(len(self.Psis)):
+            y_com = np.mean(np.abs(self.Psis[k]) * Y) / np.mean(np.abs(self.Psis[k]))
+            x_com = np.mean(np.abs(self.Psis[k]) * X) / np.mean(np.abs(self.Psis[k]))
+            
+            if y_com > 0.1e-6:
+                well_classification.append(+1)
+            elif y_com < -0.1e-6:
+                well_classification.append(-1)
+            else: 
+                well_classification.append(0)
+            
+        return np.array(well_classification)
+    
+    def classify_wavefunction_by_xy(self) -> List:
+        """Classifies the wave function by labeling it with a number nx and ny. These numbers capture the number of crests of the wave function in 
+        the x and y direction, respectively. 
+
+        Returns:
+            List: List of dictionaries. The length of this list is equal to the length of Psis.
+        """
+        assert self.solved is True, print("You must solve the Schrodinger equation first!")
         
+        classification = list()
+        for k in range(len(self.Psis)):
+            
+            sig = np.sum(self.Psis[k] ** 2, axis=0)
+            n_x = len(scipy.signal.find_peaks(sig, height=np.max(sig)/2)[0])
+            
+            sig = np.sum(self.Psis[k] ** 2, axis=1)
+            n_y = len(scipy.signal.find_peaks(sig, height=np.max(sig)/2)[0])
+            
+            classification.append({"nx" : n_x - 1, 
+                                   "ny" : n_y - 1})
+            
+        return classification
+    
+    def classification_to_latex(self, classification: dict) -> str:
+        """This function takes the classification dictionary and transforms it into a string for plotting.
+
+        Args:
+            classification (dict): Dictionary with elements 'nx' and 'ny' (both integers)
+
+        Returns:
+            _type_: String for use in matplotlib legends, titles, etc.
+        """
+        return fr"$|{classification['nx']:d}_x {classification['ny']:d}_y \rangle$"
+
+    def get_quantum_spectrum(self, coor: Optional[List[float]]=[0,0], dxdy: List[float]=[1, 2], plot_wavefunctions: bool=False, 
+                             axes_zoom: Optional[float]=None, **solve_kwargs) -> tuple[ArrayLike, ArrayLike]:
+        """Returns the frequencies of the first N eigenmodes for a single electron trapped in a potential. 
+
+        Args:
+            potential_dict (Dict[str, ArrayLike]): Dictionary containing at least the keys also present in the voltages dictionary.
+            The 2d-array associated with each key contains the coupling coefficient for the respective electrode in space.
+            voltages (Dict[str, float]): Dictionary with electrode names as keys. The value associated with each key is the voltage
+            applied to each electrode
+            coor (List[float, float], optional): Center of the solution window (in microns), this should include the potential minimum. Defaults to [0,0].
+            dxdy (List[float, float], optional): width of the solution window for x and y (measured in microns). Defaults to [1, 2].
+            plot_wavefunctions (bool, optional): Whether to plot the wave functions or simply return the frequencies. Defaults to False.
+            axes_zoom (Optional[float], optional): Axes extent around the wavefunction. If None the axes are set by coor and dxdy. Defaults to None.
+
+        Returns:
+            tuple[ArrayLike, ArrayLike]: Eigenfrequencies of the first N motional modes in Hz, and a classification of the mode.
+        """
+        
+        if not self.solved: 
+            self.solve_system(coor=coor, dxdy=dxdy, **solve_kwargs)
+
         if plot_wavefunctions:
-            contours = [np.round(np.min(zdata), 3) +k*1e-3 for k in range(5)]
-            CS = plt.contour(potential_dict['xlist'], potential_dict['ylist'], zdata, levels=contours)
-            plt.gca().clabel(CS, CS.levels, inline=True, fontsize=10)
-            # plt.text(-0.90, 0.4, f"({well} well) - {mode_frequencies[k]/1e9:.2f} GHz")
-            plt.title(f"({well} well) - {mode_frequencies[k]/1e9:.2f} GHz", size=10)
-            
-            if axes_zoom is not None:
-                plt.xlim((x_com/1e-6 - axes_zoom/2), (x_com/1e-6 + axes_zoom/2))
-                plt.ylim((y_com/1e-6 - axes_zoom/2), (y_com/1e-6 + axes_zoom/2))
-            else:
-                plt.xlim(np.min(xsol/1e-6), np.max(xsol/1e-6))
-                plt.ylim(np.min(ysol/1e-6), np.max(ysol/1e-6))
-            
-            plt.locator_params(axis='both', nbins=4)
+            fig = plt.figure(figsize=(12.,6.))
+
+        well_classification = self.classify_wavefunction_by_well()
+        xy_classification = self.classify_wavefunction_by_xy()
         
-            if k >= 3:
-                plt.xlabel("$x$"+f" ({chr(956)}m)")
+        for k in range(6):
+            if plot_wavefunctions:
+                plt.subplot(2, 3, k+1)
+                plt.pcolormesh(self.xsol/1e-6, self.ysol/1e-6, self.Psis[k], cmap=plt.cm.RdBu_r, 
+                               vmin=-np.max(np.abs(self.Psis[k])), 
+                               vmax=np.max(np.abs(self.Psis[k])))
+                cbar = plt.colorbar()
+                tick_locator = matplotlib.ticker.MaxNLocator(nbins=4)
+                cbar.locator = tick_locator
+                cbar.update_ticks()
                 
-            if not k%3:
-                plt.ylabel("$y$"+f" ({chr(956)}m)")
+            if plot_wavefunctions:
+                zdata = -make_potential(self.potential_dict, self.voltage_dict).T
+                contours = [np.round(np.min(zdata), 3) +k*1e-3 for k in range(5)]
+                CS = plt.contour(self.potential_dict['xlist'], self.potential_dict['ylist'], zdata, levels=contours)
+                plt.gca().clabel(CS, CS.levels, inline=True, fontsize=10)
+                plt.title(rf"{self.classification_to_latex(xy_classification[k])} "+f"({well_classification[k]} well) - {self.mode_frequencies[k]/1e9:.2f} GHz", size=10)
+                
+                if axes_zoom is not None:
+                    # classify by finding the center of mass of the wave function
+                    X, Y = np.meshgrid(self.xsol, self.ysol)
+                    y_com = np.mean(np.abs(self.Psis[k]) * Y) / np.mean(np.abs(self.Psis[k]))
+                    x_com = np.mean(np.abs(self.Psis[k]) * X) / np.mean(np.abs(self.Psis[k]))
+                    
+                    plt.xlim((x_com/1e-6 - axes_zoom/2), (x_com/1e-6 + axes_zoom/2))
+                    plt.ylim((y_com/1e-6 - axes_zoom/2), (y_com/1e-6 + axes_zoom/2))
+                else:
+                    plt.xlim(np.min(self.xsol/1e-6), np.max(self.xsol/1e-6))
+                    plt.ylim(np.min(self.ysol/1e-6), np.max(self.ysol/1e-6))
+                
+                plt.locator_params(axis='both', nbins=4)
             
-        classification.append(well)
+                if k >= 3:
+                    plt.xlabel("$x$"+f" ({chr(956)}m)")
+                    
+                if not k%3:
+                    plt.ylabel("$y$"+f" ({chr(956)}m)")
+                            
+        if plot_wavefunctions:
+            fig.tight_layout()
+                    
+        return self.mode_frequencies
+    
+    def get_anharmonicity(self) -> float:
+        assert self.solved is True, print("You must solve the Schrodinger equation first!")
         
-    if plot_wavefunctions:
-        fig.tight_layout()
-                
-    return mode_frequencies, np.array(classification)
+        frequencies = self.mode_frequencies
+        classifications = self.classify_wavefunction_by_xy()
+        
+        f_2y = frequencies[classifications.index({'nx':0, 'ny':2})]
+        f_1y = frequencies[classifications.index({'nx':0, 'ny':1})]
+        try:
+            f_0y = frequencies[classifications.index({'nx':0, 'ny':0})]
+        except:
+            # In some pathological cases the ground state is spread out over two wells, and it's not recognized. Then we can assume it's the first index.
+            f_0y = frequencies[0]
+        
+        anharmonicity = (f_2y - f_1y) - (f_1y - f_0y)
+        
+        return anharmonicity
 
-def get_resonator_coupling(potential_dict: Dict[str, ArrayLike], voltages: Dict[str, float], coor: List[float]=[0,0], 
-                           dxdy: List[float]=[1, 2], Ex: float=0, Ey: float=1e6, resonator_impedance: float=50, 
-                           resonator_frequency: float=4e9, plot_result: bool=True) -> ArrayLike:
-    """Calculate the coupling strength in Hz for mode |i> to mode |j>
+    def get_resonator_coupling(self, coor: Optional[List[float]]=[0,0], dxdy: List[float]=[1, 2], Ex: float=0, Ey: float=1e6, resonator_impedance: float=50, 
+                               resonator_frequency: float=4e9, plot_result: bool=True, **solve_kwargs) -> ArrayLike:
+        """Calculate the coupling strength in Hz for mode |i> to mode |j>
 
-    Args:
-        potential_dict (Dict[str, ArrayLike]): Dictionary containing at least the keys also present in the voltages dictionary.
-        The 2d-array associated with each key contains the coupling coefficient for the respective electrode in space.
-        voltages (Dict[str, float]): Dictionary with electrode names as keys. The value associated with each key is the voltage
-        applied to each electrode
-        coor (List[float, float], optional): Center of the solution window (in microns), this should include the potential minimum. Defaults to [0,0].
-        dxdy (List[float, float], optional): width of the solution window for x and y (measured in microns). Defaults to [1, 2].
-        Ex (float, optional): Electric field of the relevant microwave mode in the x-direction. Defaults to 0.
-        Ey (float, optional): Electric field of the relevant microwave mode in the y-direction. Defaults to 1e6.
-        resonator_impedance (float, optional): Resonator impedance in ohms. Defaults to 50.
-        resonator_frequency (float, optional): Resonator frequency in Hz. Defaults to 4e9.
-        plot_result (bool, optional): Plots the matrix. Defaults to True.
+        Args:
+            coor (List[float, float], optional): Center of the solution window (in microns), this should include the potential minimum. Defaults to [0,0].
+            dxdy (List[float, float], optional): width of the solution window for x and y (measured in microns). Defaults to [1, 2].
+            Ex (float, optional): Electric field of the relevant microwave mode in the x-direction. Defaults to 0.
+            Ey (float, optional): Electric field of the relevant microwave mode in the y-direction. Defaults to 1e6.
+            resonator_impedance (float, optional): Resonator impedance in ohms. Defaults to 50.
+            resonator_frequency (float, optional): Resonator frequency in Hz. Defaults to 4e9.
+            plot_result (bool, optional): Plots the matrix. Defaults to True.
 
-    Returns:
-        ArrayLike: The g_ij matrix
-    """
-    if coor is None:
-        coor = find_minimum_location(potential_dict, voltages)
-    
-    # Note that xsol and ysol determine the x and y points for which you want to solve the Schrodinger equation
-    xsol = np.linspace(coor[0]-dxdy[0]/2, coor[0]+dxdy[0]/2, 151) * 1e-6
-    y_symmetric = construct_symmetric_y(coor[1]-dxdy[1]/2, 50) * 1e-6
-    ysol = np.zeros(2 * len(y_symmetric))
-    ysol[:len(y_symmetric)] = y_symmetric
-    ysol[len(y_symmetric):] = -y_symmetric[::-1]
-    
-    potential = make_potential(potential_dict, voltages)
-
-    # By using the interpolator we create a function that can evaluate the potential energy for an electron at arbitrary x,y
-    # This is useful if the original potential data is sparsely sampled (e.g. due to FEM time constraints)
-    potential_function = scipy.interpolate.RegularGridInterpolator((potential_dict['xlist']*1e-6, 
-                                                                    potential_dict['ylist']*1e-6), 
-                                                                   -potential)
-    # Number of eigenfrequencies to calculate
-    N_evals = 10
-
-    # Note that the solution is sampled over the arrays xsol, ysol which can be set indepently from the FEM x and y points.
-    se = SingleElectron(xsol, ysol, potential_function=potential_function, solve=False)
-    se.sparsify(num_levels=N_evals)
-    _ = se.solve(sparse_args=se.sparse_args)
-
-    Psis = se.get_2Dpsis(N_evals)
-    # mode_frequencies = (Evals - Evals[0]) * hbar**2 / (2 * q_e * m_e) * q_e / (2 * np.pi * hbar)
-    
-    # The resonator coupling is a symmetric matrix 
-    g_ij = np.zeros((N_evals, N_evals))
-    X, Y = np.meshgrid(xsol, ysol)
-    
-    prefactor = q_e * np.sqrt(hbar * (2 * np.pi * resonator_frequency) ** 2 * resonator_impedance / 2) * 1 / (2 * np.pi * hbar)
-    
-    for i in range(N_evals):
-        for j in range(N_evals):
-            g_ij[i, j] = prefactor * np.sum(Psis[i] * ( X * Ex + Y * Ey ) * np.conjugate(Psis[j]))
+        Returns:
+            ArrayLike: The g_ij matrix
+        """
+        
+        if not self.solved: 
+            self.solve_system(coor=coor, dxdy=dxdy, **solve_kwargs)
             
-    if plot_result:
-        fig = plt.figure(figsize=(7.,4.))
-        plt.imshow(np.abs(g_ij)/1e6, cmap=plt.cm.Blues)
+        N_evals = len(self.Psis)
+        
+        # The resonator coupling is a symmetric matrix 
+        g_ij = np.zeros((N_evals, N_evals))
+        X, Y = np.meshgrid(self.xsol, self.ysol)
+        
+        prefactor = q_e * np.sqrt(hbar * (2 * np.pi * resonator_frequency) ** 2 * resonator_impedance / 2) * 1 / (2 * np.pi * hbar)
+        
+        for i in range(N_evals):
+            for j in range(N_evals):
+                g_ij[i, j] = prefactor * np.sum(self.Psis[i] * ( X * Ex + Y * Ey ) * np.conjugate(self.Psis[j]))
+                
+        if plot_result:
+            fig = plt.figure(figsize=(7.,4.))
+            plt.imshow(np.abs(g_ij)/1e6, cmap=plt.cm.Blues)
+            cbar = plt.colorbar()
+            cbar.ax.set_ylabel(r"Coupling strength $g_{ij} / 2\pi$ (MHz)")
+            plt.xlabel("Mode index $j$")
+            plt.ylabel("Mode index $i$")
+
+            for (i, j) in product(range(N_evals), range(N_evals)):
+                g_value = np.abs(g_ij[i, j]/ 1e6)
+                if g_value > 0.2:
+                    col = 'white' if g_value > np.max(np.abs(g_ij)) / 1e6 / 2 else 'black'
+                    plt.text(i, j, f"{g_ij[i, j]/ 1e6:.1f}", size=9, ha='center', va='center', color=col)            
+        
+        return g_ij
+    
+    def plot_potential_energy(self, coor: Optional[List[float]]=[0,0], dxdy: List[float]=[1, 2], figsize: tuple[float, float]=(7, 4)) -> None:
+        """Plot the potential energy for a single electron as function of (x,y)
+
+        Args:
+            coor (List[float, float], optional): Center of the solution window (in microns), this should include the potential minimum. Defaults to [0,0].
+            dxdy (List[float, float], optional): width of the solution window for x and y (measured in microns). Defaults to [1, 2].
+            figsize (tuple[float, float], optional): Figure size that gets passed to matplotlib.pyplot.figure. Defaults to (7, 4).
+        """
+
+        potential = make_potential(self.potential_dict, self.voltage_dict)
+        zdata = -potential.T
+
+        fig = plt.figure(figsize=figsize)
+        ax = fig.add_subplot(111)
+        plt.pcolormesh(self.potential_dict['xlist'], self.potential_dict['ylist'], zdata, cmap=plt.cm.RdYlBu_r)
         cbar = plt.colorbar()
-        cbar.ax.set_ylabel(r"Coupling strength $g_{ij} / 2\pi$ (MHz)")
-        plt.xlabel("Mode index $j$")
-        plt.ylabel("Mode index $i$")
+        tick_locator = matplotlib.ticker.MaxNLocator(nbins=4)
+        cbar.locator = tick_locator
+        cbar.update_ticks()
+        cbar.ax.set_ylabel(r"Potential energy $-eV(x,y)$")
+        
+        xidx, yidx = np.unravel_index(zdata.argmin(), zdata.shape)
+        plt.plot(self.potential_dict['xlist'][yidx], self.potential_dict['ylist'][xidx], '*', color='white')
 
-        for (i, j) in product(range(N_evals), range(N_evals)):
-            g_value = np.abs(g_ij[i, j]/ 1e6)
-            if g_value > 0.2:
-                col = 'white' if g_value > np.max(np.abs(g_ij)) / 1e6 / 2 else 'black'
-                plt.text(i, j, f"{g_ij[i, j]/ 1e6:.1f}", size=9, ha='center', va='center', color=col)            
-    
-    return g_ij
-    
+        ax.set_xlim(coor[0] - dxdy[0]/2, coor[0] + dxdy[0]/2)
+        ax.set_ylim(coor[1] - dxdy[1]/2, coor[1] + dxdy[1]/2)
 
-def plot_potential_energy(potential_dict: Dict[str, ArrayLike], voltages: Dict[str, float], coor: List[float]=[0,0], dxdy: List[float]=[1, 2], 
-                          figsize: tuple[float, float]=(7, 4)) -> None:
-    """Plot the potential energy for a single electron as function of (x,y)
+        ax.set_aspect('equal')
 
-    Args:
-        potential_dict (Dict[str, ArrayLike]): Dictionary containing at least the keys also present in the voltages dictionary.
-        The 2d-array associated with each key contains the coupling coefficient for the respective electrode in space.
-        voltages (Dict[str, float]): Dictionary with electrode names as keys. The value associated with each key is the voltage
-        applied to each electrode
-        coor (List[float, float], optional): Center of the solution window (in microns), this should include the potential minimum. Defaults to [0,0].
-        dxdy (List[float, float], optional): width of the solution window for x and y (measured in microns). Defaults to [1, 2].
-        figsize (tuple[float, float], optional): Figure size that gets passed to matplotlib.pyplot.figure. Defaults to (7, 4).
-    """
+        contours = [np.round(np.min(zdata), 3) +k*1e-3 for k in range(5)]
+        CS = plt.contour(self.potential_dict['xlist'], self.potential_dict['ylist'], zdata, levels=contours)
+        ax.clabel(CS, CS.levels, inline=True, fontsize=10)
 
-    potential = make_potential(potential_dict, voltages)
-    zdata = -potential.T
-
-    fig = plt.figure(figsize=figsize)
-    ax = fig.add_subplot(111)
-    plt.pcolormesh(potential_dict['xlist'], potential_dict['ylist'], zdata, cmap=plt.cm.RdYlBu_r)
-    cbar = plt.colorbar()
-    tick_locator = matplotlib.ticker.MaxNLocator(nbins=4)
-    cbar.locator = tick_locator
-    cbar.update_ticks()
-    cbar.ax.set_ylabel(r"Potential energy $-eV(x,y)$")
-    
-    xidx, yidx = np.unravel_index(zdata.argmin(), zdata.shape)
-    plt.plot(potential_dict['xlist'][yidx], potential_dict['ylist'][xidx], '*', color='white')
-
-    ax.set_xlim(coor[0] - dxdy[0]/2, coor[0] + dxdy[0]/2)
-    ax.set_ylim(coor[1] - dxdy[1]/2, coor[1] + dxdy[1]/2)
-
-    ax.set_aspect('equal')
-
-    contours = [np.round(np.min(zdata), 3) +k*1e-3 for k in range(5)]
-    CS = plt.contour(potential_dict['xlist'], potential_dict['ylist'], zdata, levels=contours)
-    ax.clabel(CS, CS.levels, inline=True, fontsize=10)
-
-    plt.xlabel("$x$"+f" ({chr(956)}m)")
-    plt.ylabel("$y$"+f" ({chr(956)}m)")
-    plt.locator_params(axis='both', nbins=4)
-    
-    fig.tight_layout()
+        plt.xlabel("$x$"+f" ({chr(956)}m)")
+        plt.ylabel("$y$"+f" ({chr(956)}m)")
+        plt.locator_params(axis='both', nbins=4)
+        
+        fig.tight_layout()
