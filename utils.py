@@ -22,7 +22,7 @@ def find_nearest(array: ArrayLike, value: float) -> int:
     Finds the nearest value in array. Returns index of array for which this is true.
     """
     idx=(np.abs(array-value)).argmin()
-    return np.int(idx)
+    return int(idx)
 
 def r2xy(r: ArrayLike) -> tuple:
     """
@@ -46,3 +46,21 @@ def xy2r(x: ArrayLike, y: ArrayLike) -> ArrayLike:
         return r
     else:
         raise ValueError("x and y must have the same length!")
+    
+def crop_potential(x: ArrayLike, y: ArrayLike, U: ArrayLike, xrange: tuple, yrange: tuple) -> tuple:
+    """Crops the potential to the boundaries specified by xrange and yrange. 
+
+    Args:
+        x (ArrayLike): one dimensional array of x-points
+        y (ArrayLike): one dimensional array of y-points
+        U (ArrayLike): two dimensional array of the potential.
+        xrange (tuple): tuple of two floats that indicate the min and max range for the x-coordinate.
+        yrange (tuple): tuple of two floats that indicate the min and max range for the y-coordinate.
+
+    Returns:
+        tuple: cropped x array, cropped y array, cropped potential array.
+    """
+    xmin_idx, xmax_idx = find_nearest(x, xrange[0]), find_nearest(x, xrange[1])
+    ymin_idx, ymax_idx = find_nearest(y, yrange[0]), find_nearest(y, yrange[1])
+
+    return x[xmin_idx:xmax_idx], y[ymin_idx:ymax_idx], U[xmin_idx:xmax_idx, ymin_idx:ymax_idx]

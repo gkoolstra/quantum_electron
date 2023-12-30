@@ -5,9 +5,21 @@ from scipy.constants import elementary_charge as q_e, epsilon_0 as eps0, electro
 
 from numpy.typing import ArrayLike
 from typing import List, Dict
+from matplotlib import pyplot as plt
 
 class EOMSolver:
     def __init__(self, f0: float, Z0: float, Ex: callable, Ey: callable, curv_xx: callable, curv_xy: callable, curv_yy: callable) -> None:
+        """Class that sets up the equations of motion in matrix form and solves them.
+
+        Args:
+            f0 (float): Resonance frequency of the RF-mode that primarily couples to the electron mode.
+            Z0 (float): Impedance of the RF-mode.
+            Ex (callable): Electric field in the x-direction. This function is inherited from the FullModel class.
+            Ey (callable): Electric field in the y-direction. This function is inherited from the FullModel class.
+            curv_xx (callable): Second derivative of the electrostatic potential:  d^2 / dx^2 V. This function is inherited from the PositionSolver class.
+            curv_xy (callable): Second derivative of the electrostatic potential:  d^2 / dx dy V. This function is inherited from the PositionSolver class.
+            curv_yy (callable): Second derivative of the electrostatic potential:  d^2 / dy^2 V. This function is inherited from the PositionSolver class.
+        """
         self.f0 = f0
         self.Z0 = Z0
         
@@ -96,12 +108,52 @@ class EOMSolver:
 
         return K, M
 
-    def solve_eom(self, LHS: ArrayLike, RHS: ArrayLike) -> tuple[ArrayLike]:
+    def solve_eom(self, LHS: ArrayLike, RHS: ArrayLike, sort_by_cavity_participation: bool = True) -> tuple[ArrayLike]:
+        """Solves the eigenvalues and eigenvectors for the system of equations constructed with setup_eom()
+        The order of eigenvalues, and order of the columns of EVecs is coupled. By default scipy sorts this from low eigenvalue to high eigenvalue, however, 
+        by flagging sort_by_cavity_participation, this function will return the eigenvalues and vectors sorted by largest cavity contribution first.
+
+        Args:
+            LHS (ArrayLike): K, analog of the spring constant matrix.
+            RHS (ArrayLike): M, analog of the mass matrix.
+            sort_by_cavity_participation (bool, optional): Sorts the eigenvalues/vectors by the participation in the first element of the eigenvector. Defaults to True.
+
+        Returns:
+            tuple[ArrayLike]: Eigenvalues, Eigenvectors
         """
-        Solves the eigenvalues and eigenvectors for the system of equations constructed with setup_eom()
-        :param LHS: matrix product of M^(-1) K
-        :return: Eigenvalues, Eigenvectors
-        """
+
         # EVals, EVecs = np.linalg.eig(np.dot(np.linalg.inv(RHS), LHS))
         EVals, EVecs = scipy.linalg.eigh(LHS, b=RHS)
+        
+        if sort_by_cavity_participation:
+            # The cavity participation is the first element of each eigenvector, because that's how the matrix was constructed.
+            cavity_participation = EVecs[0, :]
+            # Sort by largest cavity participation (argsort will normally put the smallest first, so invert it)
+            sorted_order = np.argsort(np.abs(cavity_participation))[::-1]
+            # Only the columns are ordered, the rows (electrons) are not shuffled. Keep the Evals and Evecs order consistent.
+            EVecs = EVecs[:, sorted_order]
+            EVals = EVals[sorted_order]
+        
         return EVals, EVecs
+    
+    def plot_eigenvector(self, electron_positions: ArrayLike, eigenvector: ArrayLike, length: float=0.5, color: str='k') -> None:
+        """Plots the eigenvector at the electron positions.
+
+        Args:
+            electron_positions (ArrayLike): Electron position array in length 2 * n_electrons. The order should be [x0, y0, x1, y1, ...]
+            eigenvector (ArrayLike): Eigenvector to be plotted. Length should be 2 * n_electrons + 1, as a column output by solve_eom.
+            length (float, optional): Length of the eigenvector in units of microns. Defaults to 0.5.
+            color (str, optional): Face color of the arrow. Defaults to 'k'.
+        """
+        
+        e_x, e_y = r2xy(electron_positions)
+
+        # The first index of the eigenvector contains the charge displacement, thus we look at the second index and beyond.
+        # Normalize the vector to 'length'
+        evec_norm = eigenvector[1:] / np.linalg.norm(eigenvector[1:])
+        dxs, dys = r2xy(evec_norm * length)
+
+        for e_idx in range(len(e_x)):
+            width=0.025
+            plt.arrow(e_x[e_idx] * 1e6, e_y[e_idx] * 1e6, dx=dxs[e_idx], dy=dys[e_idx], width=width, head_length=1.5*3 *width, head_width=3.5*width, 
+                    edgecolor='k', lw=0.4, facecolor=color)
