@@ -119,7 +119,7 @@ class EOMSolver:
             sort_by_cavity_participation (bool, optional): Sorts the eigenvalues/vectors by the participation in the first element of the eigenvector. Defaults to True.
 
         Returns:
-            tuple[ArrayLike]: Eigenvalues, Eigenvectors
+            tuple[ArrayLike]: Eigenfrequencies, Eigenvectors
         """
 
         # EVals, EVecs = np.linalg.eig(np.dot(np.linalg.inv(RHS), LHS))
@@ -134,7 +134,7 @@ class EOMSolver:
             EVecs = EVecs[:, sorted_order]
             EVals = EVals[sorted_order]
         
-        return EVals, EVecs
+        return np.sqrt(EVals) / (2 * np.pi), EVecs
     
     def plot_eigenvector(self, electron_positions: ArrayLike, eigenvector: ArrayLike, length: float=0.5, color: str='k') -> None:
         """Plots the eigenvector at the electron positions.

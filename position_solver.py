@@ -137,9 +137,100 @@ class PositionSolver:
         self.interpolator = RectBivariateSpline(grid_data_x, grid_data_y, potential_data,
                                                 kx=spline_order_x, ky=spline_order_y, s=smoothing)
 
-        # Constants
         self.include_screening = include_screening
         self.screening_length = screening_length
+        
+        self.x_max = np.max(grid_data_x)
+        self.x_min = np.min(grid_data_x)
+        self.x_center = (self.x_max + self.x_min) / 2
+        self.y_max = np.max(grid_data_y)
+        self.y_min = np.min(grid_data_y)
+        self.y_center = (self.y_max + self.y_min) / 2
+        
+        self.periodic_boundaries = []
+
+    def map_y_into_domain(self, y: ArrayLike, ybounds: Optional[tuple]=None) -> ArrayLike:
+        """Map the y-coordinates back into the solution domain set by (self.y_min, self.y_max), unless otherwise specified.
+        This function is called in the case of periodic boundary conditions in the y direction.
+
+        Args:
+            y (ArrayLike): 1D array of electron positions (y-coordinate)
+            xbounds (Optional[tuple], optional): y-domain boundaries. Defaults to None, in which case (self.y_min, self.y_max) is used.
+
+        Returns:
+            ArrayLike: 1D array of electron positions (y-coordinate) mapped into the solution domain.
+        """
+        if ybounds is None:
+            ybounds = (self.y_min, self.y_max)
+        return ybounds[0] + (y - ybounds[0]) % (ybounds[1] - ybounds[0])
+    
+    def map_x_into_domain(self, x: ArrayLike, xbounds: Optional[tuple]=None) -> ArrayLike:
+        """Map the x-coordinates back into the solution domain set by (self.x_min, self.x_max), unless otherwise specified.
+        This function is called in the case of periodic boundary conditions in the x-domain.
+
+        Args:
+            x (ArrayLike): 1D array of electron positions (x-coordinate)
+            xbounds (Optional[tuple], optional): x-domain boundaries. Defaults to None, in which case (self.x_min, self.x_max) is used.
+
+        Returns:
+            ArrayLike: 1D array of electron positions (x-coordinate) mapped into the solution domain.
+        """
+        if xbounds is None:
+            xbounds = (self.x_min, self.x_max)
+        return xbounds[0] + (x - xbounds[0]) % (xbounds[1] - xbounds[0])
+
+    def calculate_metrics(self, xi: ArrayLike, yi: ArrayLike) -> tuple:
+        """This function calculates the distances between electrons in the case of periodic boundary conditions. 
+        To deal with this, all electrons should first be mapped into the domain (self.x_min, self.x_max) and (self.y_min, self.y_max). 
+        To calculate the xi-xj, yi-yj and ri-rj we artificially move the electron positions and re-calculate 
+        the arrays. Finally we return the smallest ri-rj which can then be used to evaluate the electron-electron energy.
+        
+        Args:
+            xi (ArrayLike): 1D array of electron positions (x-coordinate)
+            yi (ArrayLike): 1D array of electron positions (y-coordinate)
+
+        Returns:
+            tuple: Three pairwise distance metrics (2D arrays): xi-xj, yi-yj, ri-rj
+        """
+        Xi, Yi = np.meshgrid(xi, yi)
+        Xj, Yj = Xi.T, Yi.T
+        
+        XiXj = Xi - Xj
+        YiYj = Yi - Yj
+        
+        Rij_standard = np.sqrt((XiXj) ** 2 + (YiYj) ** 2)
+
+        if 'y' in self.periodic_boundaries:
+            Yi_shifted = Yi.copy()
+            Yi_shifted[Yi_shifted > self.y_center] -= np.abs(self.y_max - self.y_min)
+            Yj_shifted = Yi_shifted.T
+            YiYj_shifted = Yi_shifted - Yj_shifted
+            
+            Rij_shifted = np.sqrt((XiXj) ** 2 + (YiYj_shifted) ** 2)
+            
+            # Calculate the pairwise minimum of the shifted and standard expression.
+            Rij = np.minimum(Rij_standard, Rij_shifted)
+
+            # Use shifted y-coordinate only in this case:
+            np.copyto(YiYj, YiYj_shifted, where=Rij_shifted < Rij_standard)
+
+        if 'x' in self.periodic_boundaries:
+            # For periodic boundary conditions in the x-direction, if electrons move out of the simulation domain (x_min, x_max), they'll come back around.
+            Xi_shifted = Xi.copy()
+            Xi_shifted[Xi_shifted > self.x_center] -= np.abs(self.x_max - self.x_min)
+            Xj_shifted = Xi_shifted.T
+            XiXj_shifted = Xi_shifted - Xj_shifted
+            
+            Rij_shifted = np.sqrt((XiXj_shifted) ** 2 + (YiYj) ** 2)
+            
+            # Calculate the pairwise minimum of the shifted and standard expression.
+            Rij = np.minimum(Rij_standard, Rij_shifted)
+
+            # Use shifted y-coordinate only in this case:
+            np.copyto(XiXj, XiXj_shifted, where=Rij_shifted < Rij_standard)
+
+        return XiXj, YiYj, Rij
+
 
     def V(self, xi: ArrayLike, yi: ArrayLike) -> ArrayLike:
         """
@@ -148,6 +239,10 @@ class PositionSolver:
         :param yi: a 1D array or float
         :return: Interpolated value(s) of the data supplied to __init__ at values (xi, yi)
         """
+        if 'x' in self.periodic_boundaries:
+            xi = self.map_x_into_domain(xi)
+        if 'y' in self.periodic_boundaries:
+            yi = self.map_y_into_domain(yi)
         return self.interpolator.ev(xi, yi)
 
     def Velectrostatic(self, xi: ArrayLike, yi: ArrayLike) -> float:
@@ -159,6 +254,10 @@ class PositionSolver:
         :param xi: a 1D array, or float
         :param yi: a 1D array or float
         """
+        if 'x' in self.periodic_boundaries:
+            xi = self.map_x_into_domain(xi)
+        if 'y' in self.periodic_boundaries:
+            yi = self.map_y_into_domain(yi)
         return q_e * np.sum(self.V(xi, yi))
 
     def Vee(self, xi: ArrayLike, yi: ArrayLike, eps: float=1E-15) -> ArrayLike:
@@ -168,10 +267,20 @@ class PositionSolver:
         :param xi: a 1D array, or float
         :param yi: a 1D array or float
         """
-        Xi, Yi = np.meshgrid(xi, yi)
-        Xj, Yj = Xi.T, Yi.T
+        
+        if len(self.periodic_boundaries) == 0:
+            Xi, Yi = np.meshgrid(xi, yi)
+            Xj, Yj = Xi.T, Yi.T
 
-        Rij = np.sqrt((Xi - Xj) ** 2 + (Yi - Yj) ** 2)
+            Rij = np.sqrt((Xi - Xj) ** 2 + (Yi - Yj) ** 2)
+        else: 
+            if 'x' in self.periodic_boundaries:
+                xi = self.map_x_into_domain(xi)
+            if 'y' in self.periodic_boundaries:
+                yi = self.map_y_into_domain(yi)
+            
+            XiXj, YiYj, Rij = self.calculate_metrics(xi, yi)
+            
         np.fill_diagonal(Rij, eps)
 
         if self.include_screening:
@@ -203,6 +312,10 @@ class PositionSolver:
         :param yi: a 1D array or float
         :return:
         """
+        if 'x' in self.periodic_boundaries:
+            xi = self.map_x_into_domain(xi)
+        if 'y' in self.periodic_boundaries:
+            yi = self.map_y_into_domain(yi)
         return self.interpolator.ev(xi, yi, dx=1, dy=0)
 
     def ddVdx(self, xi: ArrayLike, yi: ArrayLike):
@@ -212,6 +325,10 @@ class PositionSolver:
         :param yi: a 1D array or float
         :return:
         """
+        if 'x' in self.periodic_boundaries:
+            xi = self.map_x_into_domain(xi)
+        if 'y' in self.periodic_boundaries:
+            yi = self.map_y_into_domain(yi)
         return self.interpolator.ev(xi, yi, dx=2, dy=0)
 
     def dVdy(self, xi: ArrayLike, yi: ArrayLike) -> ArrayLike:
@@ -221,6 +338,10 @@ class PositionSolver:
         :param yi: a 1D array or float
         :return:
         """
+        if 'x' in self.periodic_boundaries:
+            xi = self.map_x_into_domain(xi)
+        if 'y' in self.periodic_boundaries:
+            yi = self.map_y_into_domain(yi)
         return self.interpolator.ev(xi, yi, dx=0, dy=1)
 
     def ddVdy(self, xi: ArrayLike, yi: ArrayLike) -> ArrayLike:
@@ -230,6 +351,10 @@ class PositionSolver:
         :param yi: a 1D array or float
         :return:
         """
+        if 'x' in self.periodic_boundaries:
+            xi = self.map_x_into_domain(xi)
+        if 'y' in self.periodic_boundaries:
+            yi = self.map_y_into_domain(yi)
         return self.interpolator.ev(xi, yi, dx=0, dy=2)
 
     def ddVdxdy(self, xi: ArrayLike, yi: ArrayLike) -> ArrayLike:
@@ -239,6 +364,11 @@ class PositionSolver:
         :param yi: a 1D array or float
         :return:
         """
+        if 'x' in self.periodic_boundaries:
+            xi = self.map_x_into_domain(xi)
+        if 'y' in self.periodic_boundaries:
+            yi = self.map_y_into_domain(yi)
+        
         return self.interpolator.ev(xi, yi, dx=1, dy=1)
 
     def grad_Vee(self, xi: ArrayLike, yi: ArrayLike, eps: float=1E-15) -> ArrayLike:
@@ -249,10 +379,21 @@ class PositionSolver:
         :param eps: A small but non-zero number to avoid triggering Warning message. Exact value is irrelevant.
         :return: 1D-array of size(xi) + size(yi)
         """
-        Xi, Yi = np.meshgrid(xi, yi)
-        Xj, Yj = Xi.T, Yi.T
+        if len(self.periodic_boundaries) == 0:
+            Xi, Yi = np.meshgrid(xi, yi)
+            Xj, Yj = Xi.T, Yi.T
+            XiXj = Xi - Xj 
+            YiYj = Yi - Yj
 
-        Rij = np.sqrt((Xi - Xj) ** 2 + (Yi - Yj) ** 2)
+            Rij = np.sqrt((Xi - Xj) ** 2 + (Yi - Yj) ** 2)
+        else:
+            if 'x' in self.periodic_boundaries:
+                xi = self.map_x_into_domain(xi)
+            if 'y' in self.periodic_boundaries:
+                yi = self.map_y_into_domain(yi)
+                
+            XiXj, YiYj, Rij = self.calculate_metrics(xi, yi)
+            
         np.fill_diagonal(Rij, eps)
 
         gradx_matrix = np.zeros(np.shape(Rij))
@@ -261,12 +402,12 @@ class PositionSolver:
 
         if self.include_screening:
             gradx_matrix = -1 * q_e ** 2 / (4 * np.pi * eps0) * np.exp(-Rij/self.screening_length) * \
-                           (Xi - Xj) * (Rij + self.screening_length) / (self.screening_length * Rij ** 3)
+                           XiXj * (Rij + self.screening_length) / (self.screening_length * Rij ** 3)
             grady_matrix = +1 * q_e ** 2 / (4 * np.pi * eps0) * np.exp(-Rij/self.screening_length) * \
-                           (Yi - Yj) * (Rij + self.screening_length) / (self.screening_length * Rij ** 3)
+                           YiYj * (Rij + self.screening_length) / (self.screening_length * Rij ** 3)
         else:
-            gradx_matrix = -1 * q_e ** 2 / (4 * np.pi * eps0) * (Xi - Xj) / Rij ** 3
-            grady_matrix = +1 * q_e ** 2 / (4 * np.pi * eps0) * (Yi - Yj) / Rij ** 3
+            gradx_matrix = -1 * q_e ** 2 / (4 * np.pi * eps0) * XiXj / Rij ** 3
+            grady_matrix = +1 * q_e ** 2 / (4 * np.pi * eps0) * YiYj / Rij ** 3
 
 
         np.fill_diagonal(gradx_matrix, 0)
@@ -385,7 +526,14 @@ class PositionSolver:
             electron_perturbed_positions = xy2r(xi_prime, yi_prime)
 
             res = minimize(cost_function, electron_perturbed_positions, **minimizer_options)
-
+            
+            xf, yf = r2xy(res['x'])
+            if 'x' in self.periodic_boundaries:
+                xf = self.map_x_into_domain(xf)
+            if 'y' in self.periodic_boundaries:
+                yf = self.map_y_into_domain(yf)
+            res['x'] = xy2r(xf, yf)
+                
             if res['status'] == 0 and res['fun'] < best_result['fun']:
                 if do_print:
                     cprint("\tNew minimum was found after perturbing!", "green")

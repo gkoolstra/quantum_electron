@@ -220,8 +220,8 @@ class FullModel(EOMSolver, PositionSolver):
                     self.Vtotal, electron_initial_positions, **trap_minimizer_options)
             else:
                 best_x, best_y = r2xy(res['x'])
-                idxs = np.union1d(np.where(best_x < -2E-6)
-                                  [0], np.where(np.abs(best_y) > 2E-6)[0])
+                idxs = np.union1d(np.where(best_x < self.x_min)
+                                  [0], np.where(np.abs(best_y) > self.x_max)[0])
                 if len(idxs) > 0 and (not suppress_warnings):
                     print("Following electrons are outside the simulation domain")
                     for i in idxs:
@@ -260,3 +260,18 @@ class FullModel(EOMSolver, PositionSolver):
             best_res = res
 
         return best_res
+
+    def plot_convergence(self, ax=None) -> None:
+        """Plot the convergence of the latest solution from get_trap_electron_positions
+
+        Args:
+            ax (optional): Matplotlib axes object. Defaults to None.
+        """
+        if ax is None: 
+            fig, ax = plt.subplots(1, 1, figsize=(5.,3.5))
+        ax.plot(self.CM.curr_grad_norm)
+        ax.set_yscale('log')
+        ax.set_xlim(-1, len(self.CM.curr_grad_norm) + 1)
+        ax.locator_params(axis='x', nbins=4)
+        ax.set_xlabel("Iteration")
+        ax.set_ylabel("Cost function")
