@@ -1,5 +1,6 @@
 import scipy
 from matplotlib import pyplot as plt
+from matplotlib import patheffects as pe
 import numpy as np
 from tqdm import tqdm
 from termcolor import cprint
@@ -25,7 +26,7 @@ class FullModel(EOMSolver, PositionSolver):
         voltage_dict = {"trap" : 0.5, "res_plus" : 0.4, "res_min" : 0.4}
         fm = FullModel(potential_dict, voltage_dict)
         fm.set_rf_interpolator(rf_electrode_labels=["res_plus", "res_minus"])
-        fm.get_trap_electron_positions(n_electrons=5)
+        fm.get_electron_positions(n_electrons=5)
 
         Args:
             potential_dict (Dict[str, ArrayLike]): Dictionary containing at least the keys also present in the voltages dictionary.
@@ -164,7 +165,7 @@ class FullModel(EOMSolver, PositionSolver):
         x_and_y_ok = np.logical_and(x_ok, y_ok)
         return np.sum(x_and_y_ok)
 
-    def get_trap_electron_positions(self, n_electrons: int, electron_initial_positions: Optional[ArrayLike] = None, verbose: bool = False,
+    def get_electron_positions(self, n_electrons: int, electron_initial_positions: Optional[ArrayLike] = None, verbose: bool = False,
                                     suppress_warnings: bool = False) -> dict:
         """This is the main method to calculate the electron positions in an electrostatic potential. This function can be called with a specific initial condition, 
         which can be useful during voltage sweeps, or with the default initial condition as specified in generate_initial_condition.
@@ -260,9 +261,24 @@ class FullModel(EOMSolver, PositionSolver):
             best_res = res
 
         return best_res
+    
+    def plot_electron_positions(self, res: dict, ax=None, color: str='mediumseagreen') -> None:
+        """Plot electron positions obtained from get_electron_positions
+
+        Args:
+            res (dict): Results dictionary from scipy.optimize.minimize
+            ax (_type_, optional): Matplotlib axes object. Defaults to None.
+            color (str, optional): Color of the markers representing the electrons. Defaults to 'mediumseagreen'.
+        """
+        x, y = r2xy(res['x'])
+        
+        if ax is None: 
+            plt.plot(x*1e6, y*1e6, 'ok', mfc=color, mew=0.5, ms=10, path_effects=[pe.SimplePatchShadow(), pe.Normal()])
+        else:
+            ax.plot(x*1e6, y*1e6, 'ok', mfc=color, mew=0.5, ms=10, path_effects=[pe.SimplePatchShadow(), pe.Normal()])
 
     def plot_convergence(self, ax=None) -> None:
-        """Plot the convergence of the latest solution from get_trap_electron_positions
+        """Plot the convergence of the latest solution from get_electron_positions
 
         Args:
             ax (optional): Matplotlib axes object. Defaults to None.
