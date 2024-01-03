@@ -136,6 +136,20 @@ class EOMSolver:
         
         return np.sqrt(EVals) / (2 * np.pi), EVecs
     
+    def get_cavity_frequency_shift(self, LHS: ArrayLike, RHS: ArrayLike) -> float:
+        """Solves the equations of motion and calculates how to resonator frequency is affected.
+
+        Args:
+            LHS (ArrayLike): K, analog of the spring constant matrix.
+            RHS (ArrayLike): M, analog of the mass matrix.
+
+        Returns:
+            float: Resonance frequency shift
+        """
+        
+        eigenfrequencies, _ = self.solve_eom(LHS, RHS, sort_by_cavity_participation=True)
+        return eigenfrequencies[0] - self.f0
+    
     def plot_eigenvector(self, electron_positions: ArrayLike, eigenvector: ArrayLike, length: float=0.5, color: str='k') -> None:
         """Plots the eigenvector at the electron positions.
 
