@@ -520,7 +520,7 @@ class QuantumAnalysis:
         
         return g_ij
     
-    def plot_potential_energy(self, coor: Optional[List[float]]=[0,0], dxdy: List[float]=[1, 2], figsize: tuple[float, float]=(7, 4)) -> None:
+    def plot_potential_energy(self, coor: Optional[List[float]]=[0,0], dxdy: List[float]=[1, 2], figsize: tuple[float, float]=(7, 4), print_voltages: bool=True) -> None:
         """Plot the potential energy for a single electron as function of (x,y)
 
         Args:
@@ -548,6 +548,10 @@ class QuantumAnalysis:
         ax.set_ylim(coor[1] - dxdy[1]/2, coor[1] + dxdy[1]/2)
 
         ax.set_aspect('equal')
+        
+        if print_voltages:
+            for k, electrode in enumerate(self.voltage_dict.keys()):
+                ax.text(coor[0] - dxdy[0]/2 - 0.75, coor[1] + dxdy[1]/2 - k * 0.15, f"{electrode} = {self.voltage_dict[electrode]:.2f} V", ha='right', va='top')
 
         contours = [np.round(np.min(zdata), 3) +k*1e-3 for k in range(5)]
         CS = plt.contour(self.potential_dict['xlist'], self.potential_dict['ylist'], zdata, levels=contours)

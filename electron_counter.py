@@ -1,6 +1,8 @@
 import scipy
 from matplotlib import pyplot as plt
 from matplotlib import patheffects as pe
+import shapely
+from shapely import Polygon
 import numpy as np
 from tqdm import tqdm
 from termcolor import cprint
@@ -123,7 +125,7 @@ class FullModel(EOMSolver, PositionSolver):
         """
         return self.rf_interpolator.ev(xe, ye, dy=1)
 
-    def generate_initial_condition(self, n_electrons: int) -> ArrayLike:
+    def generate_initial_condition(self, n_electrons: int, radius: float = 0.18E-6) -> ArrayLike:
         """Generates an initial condition for an arbitrary number of electrons. The coordinates are organized in a circular fashion and 
         are centered around the potential minimum.
 
@@ -137,8 +139,6 @@ class FullModel(EOMSolver, PositionSolver):
         coor = find_minimum_location(self.potential_dict, self.voltage_dict)
 
         # Generate initial guess positions for the electrons in a circle with certain radius.
-        radius = 0.18E-6
-
         init_trap_x = np.array([coor[0] * 1e-6 + radius * np.cos(2 *
                                np.pi * n / float(n_electrons)) for n in range(n_electrons)])
         init_trap_y = np.array([coor[1] * 1e-6 + radius * np.sin(2 *
@@ -164,6 +164,30 @@ class FullModel(EOMSolver, PositionSolver):
         y_ok = np.logical_and(ey < trap_bounds_y[1], ey > trap_bounds_y[0])
         x_and_y_ok = np.logical_and(x_ok, y_ok)
         return np.sum(x_and_y_ok)
+    
+    def get_dot_area(self, plot: bool=True, barrier_location: tuple=(-1, 0), barrier_offset: float=-0.01, **kwargs) -> float:
+        potential = make_potential(self.potential_dict, self.voltage_dict)
+
+        idx = find_nearest(self.potential_dict['ylist'], barrier_location[1])
+        idy = find_nearest(self.potential_dict['xlist'], barrier_location[0])
+        barrier_height = -potential[idy, idx]
+        cs = plt.contour(self.potential_dict['xlist'], self.potential_dict['ylist'], -potential.T, levels=[barrier_height + barrier_offset])
+
+        poly_pts = list()
+        for item in cs.collections:
+            for i in item.get_paths():
+                v = i.vertices
+                x = v[:, 0]
+                y = v[:, 1]
+                poly_pts.append([x, y])
+                
+        p = Polygon(np.array(poly_pts).reshape(2, -1).T)
+        
+        if plot:
+            shapely.plotting.plot_polygon(p, **kwargs)
+            plt.grid(None)
+            
+        return p.area
 
     def get_electron_positions(self, n_electrons: int, electron_initial_positions: Optional[ArrayLike] = None, verbose: bool = False,
                                     suppress_warnings: bool = False) -> dict:
@@ -187,8 +211,7 @@ class FullModel(EOMSolver, PositionSolver):
             electron_initial_positions = self.generate_initial_condition(
                 n_electrons)
 
-        self.CM = self.ConvergenceMonitor(
-            self.Vtotal, self.grad_total, call_every=1, verbose=verbose)
+        self.CM = self.ConvergenceMonitor(self.Vtotal, self.grad_total, call_every=1, verbose=verbose)
 
         # NOTE: Need to check about these numbers.
         gradient_tolerance = 1e-19
@@ -200,25 +223,38 @@ class FullModel(EOMSolver, PositionSolver):
                                   'callback': self.CM.monitor_convergence}
 
         # initial_jacobian = self.grad_total(electron_initial_positions)
-        res = scipy.optimize.minimize(
-            self.Vtotal, electron_initial_positions, **trap_minimizer_options)
+        res = scipy.optimize.minimize(self.Vtotal, electron_initial_positions, **trap_minimizer_options)
 
         while res['status'] > 0:
+            no_electrons_left = False
+            
             # Try removing unbounded electrons and restart the minimization
             if self.remove_unbound_electrons:
                 # Remove any electrons that are to the left of the trap
                 best_x, best_y = r2xy(res['x'])
-                idxs = np.where(np.logical_and(
-                    best_x > self.remove_bounds[0], best_x < self.remove_bounds[1]))[0]
-                best_x = np.delete(best_x, idxs)
-                best_y = np.delete(best_y, idxs)
+                idcs_x = np.where(np.logical_or(best_x < self.remove_bounds[0], best_x > self.remove_bounds[1]))[0]
+                idcs_y = np.where(np.logical_or(best_y < self.remove_bounds[0], best_y > self.remove_bounds[1]))[0]
+
+                all_idcs_to_remove = np.union1d(idcs_x, idcs_y)
+                best_x = np.delete(best_x, all_idcs_to_remove)
+                best_y = np.delete(best_y, all_idcs_to_remove)
+                    
                 # Use the solution from the current time step as the initial condition for the next timestep!
                 electron_initial_positions = xy2r(best_x, best_y)
                 if len(best_x) < len(res['x'][::2]) and (not suppress_warnings):
                     print("%d/%d unbounded electrons removed. %d electrons remain." % (
                         int(len(res['x'][::2]) - len(best_x)), len(res['x'][::2]), len(best_x)))
-                res = scipy.optimize.minimize(
-                    self.Vtotal, electron_initial_positions, **trap_minimizer_options)
+                else: # sometimes the simulation doesn't converge for other reasons...
+                    break
+                
+                if len(electron_initial_positions) > 0:
+                    print("Restart minimization!")
+                    self.CM = self.ConvergenceMonitor(self.Vtotal, self.grad_total, call_every=1, verbose=verbose)
+                    trap_minimizer_options['callback'] = self.CM.monitor_convergence
+                    res = scipy.optimize.minimize(self.Vtotal, electron_initial_positions, **trap_minimizer_options)
+                else:
+                    no_electrons_left = True
+                    break
             else:
                 best_x, best_y = r2xy(res['x'])
                 idxs = np.union1d(np.where(best_x < self.x_min)
@@ -230,16 +266,15 @@ class FullModel(EOMSolver, PositionSolver):
                               (best_x[i] * 1E6, best_y[i] * 1E6))
                 # To skip the infinite while loop.
                 break
-
-        if res['status'] > 0:
-            if not suppress_warnings:
-                cprint(
-                    "WARNING: Initial minimization for Trap did not converge!", "red")
-                print(
-                    f"Final L-inf norm of gradient = {np.amax(res['jac']):.2f} eV/m")
-                best_res = res
-                cprint(
-                    "Please check your initial condition, are all electrons confined in the simulation area?", "red")
+        
+        if res['status'] > 0 and not(no_electrons_left) and not(suppress_warnings):
+            cprint(
+                "WARNING: Initial minimization for Trap did not converge!", "red")
+            print(
+                f"Final L-inf norm of gradient = {np.amax(res['jac']):.2f} eV/m")
+            best_res = res
+            cprint(
+                "Please check your initial condition, are all electrons confined in the simulation area?", "red")
 
         if len(self.trap_annealing_steps) > 0:
             if verbose:
@@ -260,6 +295,19 @@ class FullModel(EOMSolver, PositionSolver):
         else:
             best_res = res
 
+        if self.remove_unbound_electrons:
+            best_x, best_y = r2xy(best_res['x'])
+            idcs_x = np.where(np.logical_or(best_x < self.remove_bounds[0], 
+                                            best_x > self.remove_bounds[1]))[0]
+            idcs_y = np.where(np.logical_or(best_y < self.remove_bounds[0], 
+                                            best_y > self.remove_bounds[1]))[0]
+
+            all_idcs_to_remove = np.union1d(idcs_x, idcs_y)
+            best_x = np.delete(best_x, all_idcs_to_remove)
+            best_y = np.delete(best_y, all_idcs_to_remove)
+            
+            best_res['x'] = xy2r(best_x, best_y)
+        
         return best_res
     
     def plot_electron_positions(self, res: dict, ax=None, color: str='mediumseagreen') -> None:
