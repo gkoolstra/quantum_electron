@@ -6,6 +6,8 @@ from scipy.constants import elementary_charge as q_e, epsilon_0 as eps0, electro
 from numpy.typing import ArrayLike
 from typing import List, Dict
 from matplotlib import pyplot as plt
+import matplotlib.animation as animation
+from matplotlib import patheffects as pe
 
 class EOMSolver:
     def __init__(self, f0: float, Z0: float, Ex: callable, Ey: callable, curv_xx: callable, curv_xy: callable, curv_yy: callable) -> None:
@@ -159,15 +161,69 @@ class EOMSolver:
             length (float, optional): Length of the eigenvector in units of microns. Defaults to 0.5.
             color (str, optional): Face color of the arrow. Defaults to 'k'.
         """
-        
         e_x, e_y = r2xy(electron_positions)
+        N_e = len(e_x)
 
         # The first index of the eigenvector contains the charge displacement, thus we look at the second index and beyond.
         # Normalize the vector to 'length'
         evec_norm = eigenvector[1:] / np.linalg.norm(eigenvector[1:])
-        dxs, dys = r2xy(evec_norm * length)
+        # The x and y components are ordered differently than electron positions. This depends on the ordering of the K and M matrix, see setup_eom.
+        dxs = (evec_norm * length)[:N_e]
+        dys = (evec_norm * length)[N_e:]
 
         for e_idx in range(len(e_x)):
             width=0.025
             plt.arrow(e_x[e_idx] * 1e6, e_y[e_idx] * 1e6, dx=dxs[e_idx], dy=dys[e_idx], width=width, head_length=1.5*3 *width, head_width=3.5*width, 
                     edgecolor='k', lw=0.4, facecolor=color)
+    
+    def animate_eigenvectors(self, fig, axs_list: list, eigenvector_list: List[ArrayLike], electron_positions: ArrayLike, 
+                             amplitude: float=0.5e-6, time_points: int=31, frame_interval_ms: int=10):
+        """Make a matplotlib animation object for saving as a gif, or for displaying in a notebook.
+        For use in displaying only:
+
+        from IPython import display 
+        ani = animate_eigenvectors(fig, axs, evecs.T, res['x'], amplitude=0.10e-6, time_points=21, frame_interval_ms=25)
+        # Display animation
+        video = ani.to_html5_video() 
+        html = display.HTML(video) 
+        display.display(html)
+        
+        # Save animation
+        writer = animation.PillowWriter(fps=40, bitrate=1800)
+        ani.save(savepath, writer=writer)
+
+        Args:
+            fig (matplotlib.pyplot.figure): Matplotlib figure handle.
+            axs_list (matplotlib.pyplot.axes): List of axes, e.g. for subplots. 
+            eigenvector_list (List[ArrayLike]): Eigenvector array. eigenvector_list[0] will be plot on axs_list[0] etc.
+            electron_positions (ArrayLike): Electron coordinates in the format [x0, y0, x1, y1, ...]
+            amplitude (float, optional): Amplitude of the motion in units of meters. Defaults to 0.5e-6.
+            time_points (int, optional): Number of frames for one cycle (oscillation period). Defaults to 31.
+            frame_interval_ms (int, optional): Interval between frames in milliseconds. Defaults to 10.
+
+        Returns:
+            _type_: matplotlib.animation.FuncAnimation object.
+        """
+        e_x, e_y = r2xy(electron_positions)
+        N_e = len(e_x)
+
+        all_points = list()
+        for ax in axs_list:
+            pts_data = ax.plot(e_x*1e6, e_y*1e6, 'ok', mfc='mediumseagreen', mew=0.5, ms=10, path_effects=[pe.SimplePatchShadow(), pe.Normal()])
+            all_points.append(pts_data)
+
+        # Only things in the update function will get updated.
+        def update(frame):
+            # Update the electron positions (green dots)
+            for points, eigenvector in zip(all_points, eigenvector_list):
+                evec_norm = eigenvector[1:] / np.linalg.norm(eigenvector[1:])
+                dxs = (evec_norm * amplitude)[:N_e]
+                dys = (evec_norm * amplitude)[N_e:]
+                
+                points[0].set_xdata((e_x + dxs * np.sin(2 * np.pi * frame / time_points)) * 1e6)
+                points[0].set_ydata((e_y + dys * np.sin(2 * np.pi * frame / time_points)) * 1e6)
+
+            return all_points, 
+
+        # The interval is in milliseconds
+        return animation.FuncAnimation(fig=fig, func=update, frames=time_points, interval=frame_interval_ms, repeat=True)
