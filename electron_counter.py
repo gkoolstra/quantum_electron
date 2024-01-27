@@ -12,6 +12,8 @@ from .position_solver import PositionSolver, ConvergenceMonitor
 from .eom_solver import EOMSolver
 from scipy.signal import convolve2d
 from scipy.constants import elementary_charge as q_e, epsilon_0 as eps0, electron_mass as m_e
+from skimage import measure
+from scipy.interpolate import interp1d
 
 from numpy.typing import ArrayLike
 from typing import List, Dict, Optional
@@ -166,28 +168,48 @@ class FullModel(EOMSolver, PositionSolver):
         return np.sum(x_and_y_ok)
     
     def get_dot_area(self, plot: bool=True, barrier_location: tuple=(-1, 0), barrier_offset: float=-0.01, **kwargs) -> float:
+        """Finds the area of the dot spanned by the points that lie on a equipotential that is determined by the 
+        `barrier_location` and `barrier_offset`. The resulting area has the same units as self.potential_dict['xlist'] ** 2
+
+        Args:
+            plot (bool, optional): Plot the contour and polygon spanned by that contour. Defaults to True.
+            barrier_location (tuple, optional): Location (x, y) in the map where to measure the barrier_height. The contour
+            will be drawn `barrier_offset` above the potential value at the barrier_location. Defaults to (-1, 0).
+            barrier_offset (float, optional): barrier_offset in eV. The contour will be drawn with this offset. Defaults to -0.01 (eV).
+
+        Returns:
+            float: Area
+        """
         potential = make_potential(self.potential_dict, self.voltage_dict)
 
         idx = find_nearest(self.potential_dict['ylist'], barrier_location[1])
         idy = find_nearest(self.potential_dict['xlist'], barrier_location[0])
         barrier_height = -potential[idy, idx]
-        cs = plt.contour(self.potential_dict['xlist'], self.potential_dict['ylist'], -potential.T, levels=[barrier_height + barrier_offset])
-
-        poly_pts = list()
-        for item in cs.collections:
-            for i in item.get_paths():
-                v = i.vertices
-                x = v[:, 0]
-                y = v[:, 1]
-                poly_pts.append([x, y])
-                
-        p = Polygon(np.array(poly_pts).reshape(2, -1).T)
         
-        if plot:
-            shapely.plotting.plot_polygon(p, **kwargs)
-            plt.grid(None)
+        # Contour can return non-integer indices (it interpolates to find the contour)
+        # Thus we need to create a mappable for x and y.
+        fx = interp1d(np.arange(len(self.potential_dict['xlist'])), self.potential_dict['xlist'])
+        fy = interp1d(np.arange(len(self.potential_dict['ylist'])), self.potential_dict['ylist'])
+
+        # Use sci-kit image function measure to find the contours.
+        contours = measure.find_contours(-potential.T, barrier_height + barrier_offset)
+        
+        # There may be multiple contours, but hopefully just one.
+        if len(contours) > 0:
+            for contour in contours:
+                xs = fx(contour[:, 1])
+                ys = fy(contour[:, 0])
+                
+            p = Polygon(np.c_[xs, ys])
+        
+            if plot:
+                shapely.plotting.plot_polygon(p, **kwargs)
+                plt.grid(None)
             
-        return p.area
+            return p.area
+        else:
+            # If there are no contours, the situation is easy
+            return 0.0
 
     def get_electron_positions(self, n_electrons: int, electron_initial_positions: Optional[ArrayLike] = None, verbose: bool = False,
                                     suppress_warnings: bool = False) -> dict:

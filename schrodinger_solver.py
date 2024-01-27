@@ -520,7 +520,8 @@ class QuantumAnalysis:
         
         return g_ij
     
-    def plot_potential_energy(self, coor: Optional[List[float]]=[0,0], dxdy: List[float]=[1, 2], figsize: tuple[float, float]=(7, 4), print_voltages: bool=True) -> None:
+    def plot_potential_energy(self, ax=None, coor: Optional[List[float]]=[0,0], dxdy: List[float]=[1, 2], figsize: tuple[float, float]=(7, 4), print_voltages: bool=True, 
+                              plot_contours: bool=True) -> None:
         """Plot the potential energy for a single electron as function of (x,y)
 
         Args:
@@ -532,17 +533,24 @@ class QuantumAnalysis:
         potential = make_potential(self.potential_dict, self.voltage_dict)
         zdata = -potential.T
 
-        fig = plt.figure(figsize=figsize)
-        ax = fig.add_subplot(111)
-        plt.pcolormesh(self.potential_dict['xlist'], self.potential_dict['ylist'], zdata, cmap=plt.cm.RdYlBu_r)
-        cbar = plt.colorbar()
-        tick_locator = matplotlib.ticker.MaxNLocator(nbins=4)
-        cbar.locator = tick_locator
-        cbar.update_ticks()
-        cbar.ax.set_ylabel(r"Potential energy $-eV(x,y)$")
+        if ax is None:
+            fig = plt.figure(figsize=figsize)
+            ax = fig.add_subplot(111)
+            make_colorbar = True
+        else:
+            make_colorbar = False
+            
+        pcm = ax.pcolormesh(self.potential_dict['xlist'], self.potential_dict['ylist'], zdata, cmap=plt.cm.RdYlBu_r)
+        
+        if make_colorbar:
+            cbar = plt.colorbar(pcm)
+            tick_locator = matplotlib.ticker.MaxNLocator(nbins=4)
+            cbar.locator = tick_locator
+            cbar.update_ticks()
+            cbar.ax.set_ylabel(r"Potential energy $-eV(x,y)$")
         
         xidx, yidx = np.unravel_index(zdata.argmin(), zdata.shape)
-        plt.plot(self.potential_dict['xlist'][yidx], self.potential_dict['ylist'][xidx], '*', color='white')
+        ax.plot(self.potential_dict['xlist'][yidx], self.potential_dict['ylist'][xidx], '*', color='white')
 
         ax.set_xlim(coor[0] - dxdy[0]/2, coor[0] + dxdy[0]/2)
         ax.set_ylim(coor[1] - dxdy[1]/2, coor[1] + dxdy[1]/2)
@@ -553,12 +561,14 @@ class QuantumAnalysis:
             for k, electrode in enumerate(self.voltage_dict.keys()):
                 ax.text(coor[0] - dxdy[0]/2 - 0.75, coor[1] + dxdy[1]/2 - k * 0.15, f"{electrode} = {self.voltage_dict[electrode]:.2f} V", ha='right', va='top')
 
-        contours = [np.round(np.min(zdata), 3) +k*1e-3 for k in range(5)]
-        CS = plt.contour(self.potential_dict['xlist'], self.potential_dict['ylist'], zdata, levels=contours)
-        ax.clabel(CS, CS.levels, inline=True, fontsize=10)
+        if plot_contours:
+            contours = [np.round(np.min(zdata), 3) +k*1e-3 for k in range(5)]
+            CS = ax.contour(self.potential_dict['xlist'], self.potential_dict['ylist'], zdata, levels=contours)
+            ax.clabel(CS, CS.levels, inline=True, fontsize=10)
 
-        plt.xlabel("$x$"+f" ({chr(956)}m)")
-        plt.ylabel("$y$"+f" ({chr(956)}m)")
-        plt.locator_params(axis='both', nbins=4)
+        ax.set_xlabel("$x$"+f" ({chr(956)}m)")
+        ax.set_ylabel("$y$"+f" ({chr(956)}m)")
+        ax.locator_params(axis='both', nbins=4)
         
-        fig.tight_layout()
+        if ax is None:
+            plt.tight_layout()
