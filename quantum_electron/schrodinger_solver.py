@@ -251,7 +251,11 @@ class PotentialVisualization:
         
         if print_voltages:
             for k, electrode in enumerate(self.voltage_dict.keys()):
-                ax.text(coor[0] - dxdy[0]/2 - 0.75, coor[1] + dxdy[1]/2 - k * 0.15, f"{electrode} = {self.voltage_dict[electrode]:.2f} V", ha='right', va='top')
+                xmin, xmax = ax.get_xlim()
+                ymin, ymax = ax.get_ylim()
+
+                ax.text(coor[0] - dxdy[0]/2 - 0.3 * (xmax - xmin), coor[1] + dxdy[1]/2 - k * 0.1 * (ymax - ymin), 
+                        f"{electrode} = {self.voltage_dict[electrode]:.2f} V", ha='right', va='top')
 
         if plot_contours:
             contours = [np.round(np.min(zdata), 3) +k*1e-3 for k in range(5)]
