@@ -1,9 +1,8 @@
 import numpy as np
 from matplotlib import pyplot as plt
-from scipy.optimize import approx_fprime, minimize
+from scipy.optimize import minimize
 from scipy.interpolate import RectBivariateSpline
 import os, time, multiprocessing
-from termcolor import cprint
 from .utils import xy2r, r2xy
 from scipy.constants import elementary_charge as q_e, epsilon_0 as eps0, electron_mass as m_e, Boltzmann as kB
 from typing import Optional
@@ -492,12 +491,11 @@ class PositionSolver:
 
         # Nothing has changed by perturbing the reference solution
         if (best_result['x'] == solution_data_reference['x']).all():
-            cprint("Solution data unchanged after perturbing", "white")
+            print("Solution data unchanged after perturbing")
         # Or there is a new minimum
         else:
-            cprint("Better solution found (%.3f%% difference)" \
-                   % (100 * (best_result['fun'] - solution_data_reference['fun']) / solution_data_reference['fun']),
-                   "green")
+            print("Better solution found (%.3f%% difference)" \
+                   % (100 * (best_result['fun'] - solution_data_reference['fun']) / solution_data_reference['fun']))
 
 
         return best_result
@@ -536,13 +534,13 @@ class PositionSolver:
                 
             if res['status'] == 0 and res['fun'] < best_result['fun']:
                 if do_print:
-                    cprint("\tNew minimum was found after perturbing!", "green")
+                    print("\tNew minimum was found after perturbing!")
                 best_result = res
             elif res['status'] == 0 and res['fun'] > best_result['fun']:
                 pass  # No new minimum was found after perturbation, this is quite common.
             elif res['status'] != 0 and res['fun'] < best_result['fun']:
                 if do_print:
-                    cprint("\tThere is a lower state, but minimizer didn't converge!", "red")
+                    print("\tThere is a lower state, but minimizer didn't converge!")
             elif res['status'] != 0 and res['fun'] > best_result['fun']:
                 pass
 
