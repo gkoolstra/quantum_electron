@@ -206,7 +206,65 @@ class SingleElectron(Schrodinger2D):
                             'which': 'LM',  # ‘LM’ : Largest (in magnitude) eigenvalues
                             'sigma': np.min(self.U),  # 'sigma' : Find eigenvalues near sigma using shift-invert mode.
                             'maxiter': None}  # Maximum number of Arnoldi update iterations allowed Default: n*10
+
+class PotentialVisualization:
+    def __init__(self, potential_dict: Dict[str, ArrayLike], voltages: Dict[str, float]):
+        self.potential_dict = potential_dict
+        self.voltage_dict = voltages    
+
+    def plot_potential_energy(self, ax=None, coor: Optional[List[float]]=[0,0], dxdy: List[float]=[1, 2], figsize: tuple[float, float]=(7, 4), 
+                              print_voltages: bool=True,  plot_contours: bool=True) -> None:
+        """Plot the potential energy as function of (x,y)
+
+        Args:
+            coor (List[float, float], optional): Center of the solution window (in microns), this should include the potential minimum. Defaults to [0,0].
+            dxdy (List[float, float], optional): width of the solution window for x and y (measured in microns). Defaults to [1, 2].
+            figsize (tuple[float, float], optional): Figure size that gets passed to matplotlib.pyplot.figure. Defaults to (7, 4).
+        """
+
+        potential = make_potential(self.potential_dict, self.voltage_dict)
+        zdata = -potential.T
+
+        if ax is None:
+            fig = plt.figure(figsize=figsize)
+            ax = fig.add_subplot(111)
+            make_colorbar = True
+        else:
+            make_colorbar = False
+            
+        pcm = ax.pcolormesh(self.potential_dict['xlist'], self.potential_dict['ylist'], zdata, cmap=plt.cm.RdYlBu_r)
         
+        if make_colorbar:
+            cbar = plt.colorbar(pcm)
+            tick_locator = matplotlib.ticker.MaxNLocator(nbins=4)
+            cbar.locator = tick_locator
+            cbar.update_ticks()
+            cbar.ax.set_ylabel(r"Potential energy $-eV(x,y)$")
+        
+        xidx, yidx = np.unravel_index(zdata.argmin(), zdata.shape)
+        ax.plot(self.potential_dict['xlist'][yidx], self.potential_dict['ylist'][xidx], '*', color='white')
+
+        ax.set_xlim(coor[0] - dxdy[0]/2, coor[0] + dxdy[0]/2)
+        ax.set_ylim(coor[1] - dxdy[1]/2, coor[1] + dxdy[1]/2)
+
+        ax.set_aspect('equal')
+        
+        if print_voltages:
+            for k, electrode in enumerate(self.voltage_dict.keys()):
+                ax.text(coor[0] - dxdy[0]/2 - 0.75, coor[1] + dxdy[1]/2 - k * 0.15, f"{electrode} = {self.voltage_dict[electrode]:.2f} V", ha='right', va='top')
+
+        if plot_contours:
+            contours = [np.round(np.min(zdata), 3) +k*1e-3 for k in range(5)]
+            CS = ax.contour(self.potential_dict['xlist'], self.potential_dict['ylist'], zdata, levels=contours)
+            ax.clabel(CS, CS.levels, inline=True, fontsize=10)
+
+        ax.set_xlabel("$x$"+f" ({chr(956)}m)")
+        ax.set_ylabel("$y$"+f" ({chr(956)}m)")
+        ax.locator_params(axis='both', nbins=4)
+        
+        if ax is None:
+            plt.tight_layout()
+
 def make_potential(potential_dict: Dict[str, ArrayLike], voltages: Dict[str, float]) -> ArrayLike:
     """Creates a numpy array potential based on an array of coupling coefficient arrays stored in potential_dict. 
     The returned potential values are positive for a positive voltage applied to the gate. Therefore, to transform
@@ -252,7 +310,7 @@ def find_minimum_location(potential_dict: Dict[str, ArrayLike], voltages: Dict[s
     else:
         return potential_dict['xlist'][yidx], potential_dict['ylist'][xidx]
 
-class QuantumAnalysis: 
+class QuantumAnalysis(PotentialVisualization): 
     """This class solves the Schrodinger equation for a single electron on helium. Typical workflow: 
     
     qa = QuantumAnalysis(potential_dict=potential_dict, voltage_dict=voltage_dict)
@@ -271,6 +329,8 @@ class QuantumAnalysis:
         self.potential_dict = potential_dict
         self.voltage_dict = voltage_dict
         self.solved = False
+
+        PotentialVisualization.__init__(self, potential_dict=potential_dict, voltages=voltage_dict)
         
     def update_voltages(self, voltage_dict: Dict[str, float]):
         """Update the voltage dictionary
@@ -519,56 +579,3 @@ class QuantumAnalysis:
                     plt.text(i, j, f"{g_ij[i, j]/ 1e6:.1f}", size=9, ha='center', va='center', color=col)            
         
         return g_ij
-    
-    def plot_potential_energy(self, ax=None, coor: Optional[List[float]]=[0,0], dxdy: List[float]=[1, 2], figsize: tuple[float, float]=(7, 4), print_voltages: bool=True, 
-                              plot_contours: bool=True) -> None:
-        """Plot the potential energy for a single electron as function of (x,y)
-
-        Args:
-            coor (List[float, float], optional): Center of the solution window (in microns), this should include the potential minimum. Defaults to [0,0].
-            dxdy (List[float, float], optional): width of the solution window for x and y (measured in microns). Defaults to [1, 2].
-            figsize (tuple[float, float], optional): Figure size that gets passed to matplotlib.pyplot.figure. Defaults to (7, 4).
-        """
-
-        potential = make_potential(self.potential_dict, self.voltage_dict)
-        zdata = -potential.T
-
-        if ax is None:
-            fig = plt.figure(figsize=figsize)
-            ax = fig.add_subplot(111)
-            make_colorbar = True
-        else:
-            make_colorbar = False
-            
-        pcm = ax.pcolormesh(self.potential_dict['xlist'], self.potential_dict['ylist'], zdata, cmap=plt.cm.RdYlBu_r)
-        
-        if make_colorbar:
-            cbar = plt.colorbar(pcm)
-            tick_locator = matplotlib.ticker.MaxNLocator(nbins=4)
-            cbar.locator = tick_locator
-            cbar.update_ticks()
-            cbar.ax.set_ylabel(r"Potential energy $-eV(x,y)$")
-        
-        xidx, yidx = np.unravel_index(zdata.argmin(), zdata.shape)
-        ax.plot(self.potential_dict['xlist'][yidx], self.potential_dict['ylist'][xidx], '*', color='white')
-
-        ax.set_xlim(coor[0] - dxdy[0]/2, coor[0] + dxdy[0]/2)
-        ax.set_ylim(coor[1] - dxdy[1]/2, coor[1] + dxdy[1]/2)
-
-        ax.set_aspect('equal')
-        
-        if print_voltages:
-            for k, electrode in enumerate(self.voltage_dict.keys()):
-                ax.text(coor[0] - dxdy[0]/2 - 0.75, coor[1] + dxdy[1]/2 - k * 0.15, f"{electrode} = {self.voltage_dict[electrode]:.2f} V", ha='right', va='top')
-
-        if plot_contours:
-            contours = [np.round(np.min(zdata), 3) +k*1e-3 for k in range(5)]
-            CS = ax.contour(self.potential_dict['xlist'], self.potential_dict['ylist'], zdata, levels=contours)
-            ax.clabel(CS, CS.levels, inline=True, fontsize=10)
-
-        ax.set_xlabel("$x$"+f" ({chr(956)}m)")
-        ax.set_ylabel("$y$"+f" ({chr(956)}m)")
-        ax.locator_params(axis='both', nbins=4)
-        
-        if ax is None:
-            plt.tight_layout()

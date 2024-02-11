@@ -4,10 +4,8 @@ from matplotlib import patheffects as pe
 import shapely
 from shapely import Polygon
 import numpy as np
-from tqdm import tqdm
-from termcolor import cprint
 from .utils import find_nearest, xy2r, r2xy
-from .schrodinger_solver import find_minimum_location, make_potential
+from .schrodinger_solver import find_minimum_location, make_potential, PotentialVisualization
 from .position_solver import PositionSolver, ConvergenceMonitor
 from .eom_solver import EOMSolver
 from scipy.signal import convolve2d
@@ -19,7 +17,7 @@ from numpy.typing import ArrayLike
 from typing import List, Dict, Optional
 
 
-class FullModel(EOMSolver, PositionSolver):
+class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
     def __init__(self, potential_dict: Dict[str, ArrayLike], voltage_dict: Dict[str, float], 
                  f0: float = 4e9, Z0: float = 50, include_screening : bool = False, screening_length : float = np.inf, 
                  potential_smoothing: float = 5e-4, remove_unbound_electrons : bool = False, remove_bounds : Optional[tuple] = None, 
@@ -70,6 +68,8 @@ class FullModel(EOMSolver, PositionSolver):
         EOMSolver.__init__(self, self.f0, self.Z0, Ex=self.Ex, Ey=self.Ey, 
                            Ex_up=self.Ex_up, Ex_down=self.Ex_down, Ey_up=self.Ey_up, Ey_down=self.Ey_down, 
                            curv_xx=self.ddVdx, curv_xy=self.ddVdxdy, curv_yy=self.ddVdy)
+
+        PotentialVisualization.__init__(self, potential_dict=potential_dict, voltages=voltage_dict)
 
         self.ConvergenceMonitor = ConvergenceMonitor
 
@@ -217,7 +217,7 @@ class FullModel(EOMSolver, PositionSolver):
         """
         return self.rf_interpolator.ev(xe, ye, dy=1)
 
-    def generate_initial_condition(self, n_electrons: int, radius: float = 0.18E-6) -> ArrayLike:
+    def generate_initial_condition(self, n_electrons: int, radius: float = 0.18E-6, center=None) -> ArrayLike:
         """Generates an initial condition for an arbitrary number of electrons. The coordinates are organized in a circular fashion and 
         are centered around the potential minimum.
 
@@ -227,8 +227,10 @@ class FullModel(EOMSolver, PositionSolver):
         Returns:
             ArrayLike: One-dimensional array (length = 2 * n_electrons) of x and y coordinates: [x0, y0, x1, y0, ...]
         """
-
-        coor = find_minimum_location(self.potential_dict, self.voltage_dict)
+        if center is None:
+            coor = find_minimum_location(self.potential_dict, self.voltage_dict)
+        else:
+            coor = center
 
         # Generate initial guess positions for the electrons in a circle with certain radius.
         init_trap_x = np.array([coor[0] * 1e-6 + radius * np.cos(2 *
@@ -380,25 +382,21 @@ class FullModel(EOMSolver, PositionSolver):
                 break
         
         if res['status'] > 0 and not(no_electrons_left) and not(suppress_warnings):
-            cprint(
-                "WARNING: Initial minimization for Trap did not converge!", "red")
-            print(
-                f"Final L-inf norm of gradient = {np.amax(res['jac']):.2f} eV/m")
+            print("WARNING: Initial minimization for Trap did not converge!")
+            print(f"Final L-inf norm of gradient = {np.amax(res['jac']):.2f} eV/m")
             best_res = res
-            cprint(
-                "Please check your initial condition, are all electrons confined in the simulation area?", "red")
+            print("Please check your initial condition, are all electrons confined in the simulation area?")
 
         if len(self.trap_annealing_steps) > 0:
             if verbose:
-                cprint("SUCCESS: Initial minimization for Trap converged!", "green")
+                print("SUCCESS: Initial minimization for Trap converged!")
                 # This maps the electron positions within the simulation domain
-                cprint("Perturbing solution %d times at %.2f K. (dx,dy) ~ (%.3f, %.3f) um..."
+                print("Perturbing solution %d times at %.2f K. (dx,dy) ~ (%.3f, %.3f) um..."
                        % (len(self.trap_annealing_steps), self.trap_annealing_steps[0],
                           np.mean(self.thermal_kick_x(res['x'][::2], res['x'][1::2], self.trap_annealing_steps[0],
                                                       maximum_dx=self.max_x_displacement)) * 1E6,
                           np.mean(self.thermal_kick_y(res['x'][::2], res['x'][1::2], self.trap_annealing_steps[0],
-                                                      maximum_dy=self.max_y_displacement)) * 1E6),
-                       "white")
+                                                      maximum_dy=self.max_y_displacement)) * 1E6))
 
             best_res = self.perturb_and_solve(self.Vtotal, len(self.trap_annealing_steps), self.trap_annealing_steps[0],
                                               res, maximum_dx=self.max_x_displacement, maximum_dy=self.max_y_displacement,

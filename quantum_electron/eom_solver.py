@@ -2,7 +2,6 @@ import scipy
 import numpy as np
 from .utils import r2xy
 from scipy.constants import elementary_charge as q_e, epsilon_0 as eps0, electron_mass as m_e
-
 from numpy.typing import ArrayLike
 from typing import List, Dict, Optional
 from matplotlib import pyplot as plt
@@ -43,13 +42,10 @@ class EOMSolver:
     
     def setup_eom_coupled_lc(self, ri: ArrayLike, resonator_dict: Dict) -> tuple[ArrayLike]:
         """
-        Set up the Matrix used for determining the electron frequency.
+        Set up the Matrix used for determining the electron motional frequencies.
         :param electron_positions: Electron positions, in the form [x0, y0, x1, y1, ...]
         :return: M^(-1) * K
         """
-        # omega0 = 2 * np.pi * self.f0
-        # L = self.Z0 / omega0
-        # C = 1 / (omega0**2 * L)
         C1 = resonator_dict['C1']
         C2 = resonator_dict['C2']
         Cdot = resonator_dict['Cdot']
@@ -58,7 +54,7 @@ class EOMSolver:
         
         self.num_cavity_modes = 2
         
-        # Identify the common and differential modes
+        # We first solve the cavity equations without electrons to identify the common and differential modes
         D = C1 * C2 + C1 * Cdot + C2 * Cdot
 
         M = np.array([[L1, 0], 
@@ -80,16 +76,12 @@ class EOMSolver:
         elif resonator_dict['mode'] == 'diff':
             self.f0 = self.f0_diff
         else:
-            print("'mode' property was not understood. Please specify either 'comm' or 'diff'.")
+            print("'mode' key was not understood. Please specify either 'comm' or 'diff'.")
             
         num_electrons = int(len(ri) / 2)
         xe, ye = r2xy(ri)
 
         # Set up the inverse of the mass matrix first
-        # M = np.diag(np.array([C1 + Cdot] + [C2 + Cdot] + [m_e] * (2 * num_electrons)))
-        # M[0, 1] = -Cdot
-        # M[1, 0] = -Cdot
-        
         M = np.diag(np.array([L1] + [L2] + [m_e] * (2 * num_electrons)))
 
         # Set up the kinetic matrix next
@@ -97,15 +89,6 @@ class EOMSolver:
         K = np.zeros((2 * num_electrons + 2, 2 * num_electrons + 2))
         
         # Row 1 and column 1 only have bare cavity information, and cavity-electron terms
-        # K[0, 0] = 1 / L1
-        # K[1, 1] = 1 / L2
-        
-        # K[2:num_electrons+2, 0] = K[0, 2:num_electrons+2] = q_e * self.Ex_up(xe, ye)
-        # K[2:num_electrons+2, 1] = K[1, 2:num_electrons+2] = q_e * self.Ex_down(xe, ye)
-        
-        # K[num_electrons+2:2*num_electrons+2, 0] = K[0, num_electrons+2:2*num_electrons+2] = q_e * self.Ey_up(xe, ye)
-        # K[num_electrons+2:2*num_electrons+2, 1] = K[1, num_electrons+2:2*num_electrons+2] = q_e * self.Ey_down(xe, ye)
-        
         K[:2, :2] = np.array([[(C2 + Cdot) / D, Cdot / D], 
                               [Cdot / D, (C1 + Cdot) / D]])
         
