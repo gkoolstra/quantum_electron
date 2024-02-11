@@ -7,7 +7,7 @@ In both cases there are methods to calculate couplings to a resonator and resona
 
 After installation, it is advised to take a look at the `examples` folder to explore some of the functionalities of this module. 
 
-![image info](./electron_results.png)
+![image info](./images/electron_results.png)
 
 ## Installation
 
