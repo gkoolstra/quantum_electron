@@ -183,6 +183,7 @@ class EOMSolver:
         kij_minus = np.zeros((num_electrons, num_electrons))
         lij = np.zeros((num_electrons, num_electrons))
 
+        # TODO: Implement periodic boundary conditions
         Xi, Yi = np.meshgrid(xe, ye)
         Xj, Yj = Xi.T, Yi.T
         XiXj = Xi - Xj
