@@ -22,6 +22,10 @@ cd quantum_electron
 pip install -e .
 ```
 
+### Additional packages
+To generate animations, this module relies on `ffmpeg`. On MacOS this can be easily installed using [homebrew](https://formulae.brew.sh/formula/ffmpeg) from the Terminal. On Windows it can be installed using the following [link](https://www.ffmpeg.org/download.html). 
+
+This module also integrates well with the output of the FEM software [ZeroHeliumKit](https://github.com/eeroqlab/zeroheliumkit). Please refer to any dependencies for ZHK on the linked github page.
 
 ## Getting started
 The best way to learn how to use the module is to browse the examples. At a very high level this is the workflow:
