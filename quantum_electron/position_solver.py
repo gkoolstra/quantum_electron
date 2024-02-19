@@ -230,7 +230,6 @@ class PositionSolver:
 
         return XiXj, YiYj, Rij
 
-
     def V(self, xi: ArrayLike, yi: ArrayLike) -> ArrayLike:
         """
         Evaluate the electrostatic potential at coordinates xi, yi

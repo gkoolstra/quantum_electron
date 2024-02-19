@@ -1,6 +1,7 @@
 import scipy
 from matplotlib import pyplot as plt
 from matplotlib import patheffects as pe
+import matplotlib.animation as animation
 import shapely
 from shapely import Polygon
 import numpy as np
@@ -437,6 +438,37 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
             plt.plot(x*1e6, y*1e6, 'ok', mfc=color, mew=0.5, ms=10, path_effects=[pe.SimplePatchShadow(), pe.Normal()])
         else:
             ax.plot(x*1e6, y*1e6, 'ok', mfc=color, mew=0.5, ms=10, path_effects=[pe.SimplePatchShadow(), pe.Normal()])
+
+    def animate_convergence(self, frame_interval_ms: int=10):
+        """Animate the convergence data stored in the convergence helper class. 
+
+        Args:
+            frame_interval_ms (int, optional): Interval between frames in milliseconds. Defaults to 10.
+
+        Returns:
+            _type_: matplotlib.animation.FuncAnimation object.
+        """
+        # The position data is stored in the coordinates of the helper class
+        r = self.CM.curr_xk
+        
+        fig, ax = plt.subplots(1, 1, figsize=(4, 4))
+        self.plot_potential_energy(ax=ax, dxdy=(2, 2), print_voltages=False, plot_contours=False)
+        
+        rx, ry = r2xy(r[0, :])
+        pts_data = ax.plot(rx*1e6, ry*1e6, 'ok', mfc='mediumseagreen', mew=0.5, ms=10, path_effects=[pe.SimplePatchShadow(), pe.Normal()])
+
+        # Only things in the update function will get updated.
+        def update(frame):
+            rx, ry = r2xy(r[frame, :])
+            # Update the electron positions (green dots)
+            pts_data[0].set_xdata(rx * 1e6)
+            pts_data[0].set_ydata(ry * 1e6)
+
+            return pts_data, 
+
+        fig.tight_layout()
+        # The interval is in milliseconds 
+        return animation.FuncAnimation(fig=fig, func=update, frames=np.arange(self.CM.curr_xk.shape[0]), interval=frame_interval_ms, repeat=True)
 
     def plot_convergence(self, ax=None) -> None:
         """Plot the convergence of the latest solution from get_electron_positions
