@@ -102,11 +102,15 @@ class EOMSolver:
         kij_minus = np.zeros((num_electrons, num_electrons))
         lij = np.zeros((num_electrons, num_electrons))
 
-        Xi, Yi = np.meshgrid(xe, ye)
-        Xj, Yj = Xi.T, Yi.T
-        XiXj = Xi - Xj
-        YiYj = Yi - Yj
-        rij = np.sqrt((XiXj) ** 2 + (YiYj) ** 2)
+        # Xi, Yi = np.meshgrid(xe, ye)
+        # Xj, Yj = Xi.T, Yi.T
+        # XiXj = Xi - Xj
+        # YiYj = Yi - Yj
+        # rij = np.sqrt((XiXj) ** 2 + (YiYj) ** 2)
+        
+        # Use calculate metrics from eom_solver to take into account periodic boundary conditions
+        XiXj, YiYj, rij = self.calculate_metrics(xe, ye) 
+        
         np.fill_diagonal(XiXj, 1E-15)
         tij = np.arctan(YiYj / XiXj)
 
@@ -150,7 +154,7 @@ class EOMSolver:
 
         return K, M
     
-    def setup_eom(self, ri: ArrayLike) -> tuple[ArrayLike]:
+    def setup_eom(self, ri: ArrayLike, periodic_boundaries=[]) -> tuple[ArrayLike]:
         """
         Set up the Matrix used for determining the electron frequency.
         :param electron_positions: Electron positions, in the form [x0, y0, x1, y1, ...]
@@ -183,12 +187,16 @@ class EOMSolver:
         kij_minus = np.zeros((num_electrons, num_electrons))
         lij = np.zeros((num_electrons, num_electrons))
 
-        # TODO: Implement periodic boundary conditions
-        Xi, Yi = np.meshgrid(xe, ye)
-        Xj, Yj = Xi.T, Yi.T
-        XiXj = Xi - Xj
-        YiYj = Yi - Yj
-        rij = np.sqrt((XiXj) ** 2 + (YiYj) ** 2)
+        # Use calculate metrics from eom_solver to take into account periodic boundary conditions
+        XiXj, YiYj, rij = self.calculate_metrics(xe, ye)        
+        
+        # Xi, Yi = np.meshgrid(xe, ye)
+        # Xj, Yj = Xi.T, Yi.T
+        # XiXj = Xi - Xj
+        # YiYj = Yi - Yj
+        # rij = np.sqrt((XiXj) ** 2 + (YiYj) ** 2)
+        
+        # Set Xi - Xi to a finite value to avoid dividing by zero.
         np.fill_diagonal(XiXj, 1E-15)
         tij = np.arctan(YiYj / XiXj)
 
