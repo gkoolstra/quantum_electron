@@ -228,6 +228,9 @@ class PositionSolver:
             # Use shifted y-coordinate only in this case:
             np.copyto(XiXj, XiXj_shifted, where=Rij_shifted < Rij_standard)
 
+        if self.periodic_boundaries == []:
+            Rij = Rij_standard
+
         return XiXj, YiYj, Rij
 
     def V(self, xi: ArrayLike, yi: ArrayLike) -> ArrayLike:

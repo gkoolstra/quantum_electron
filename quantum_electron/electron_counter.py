@@ -424,7 +424,7 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         
         return best_res
     
-    def plot_electron_positions(self, res: dict, ax=None, color: str='mediumseagreen') -> None:
+    def plot_electron_positions(self, res: dict, ax=None, color: str='mediumseagreen', marker_size: float=10.0) -> None:
         """Plot electron positions obtained from get_electron_positions
 
         Args:
@@ -435,9 +435,11 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         x, y = r2xy(res['x'])
         
         if ax is None: 
-            plt.plot(x*1e6, y*1e6, 'ok', mfc=color, mew=0.5, ms=10, path_effects=[pe.SimplePatchShadow(), pe.Normal()])
+            plt.plot(x*1e6, y*1e6, 'ok', mfc=color, mew=0.5, ms=marker_size, 
+                     path_effects=[pe.SimplePatchShadow(), pe.Normal()])
         else:
-            ax.plot(x*1e6, y*1e6, 'ok', mfc=color, mew=0.5, ms=10, path_effects=[pe.SimplePatchShadow(), pe.Normal()])
+            ax.plot(x*1e6, y*1e6, 'ok', mfc=color, mew=0.5, ms=marker_size, 
+                    path_effects=[pe.SimplePatchShadow(), pe.Normal()])
 
     def animate_convergence(self, frame_interval_ms: int=10):
         """Animate the convergence data stored in the convergence helper class. 
