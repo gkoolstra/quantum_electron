@@ -73,7 +73,8 @@ def density_from_positions(xi: ArrayLike, yi: ArrayLike) -> float:
     np.fill_diagonal(Rij_standard, 5e-6)
 
     nearest_neighbor_distance = np.min(Rij_standard, axis=1)
-    return 1 / (np.pi * np.mean(nearest_neighbor_distance) ** 2)
+    area = np.pi * np.mean(nearest_neighbor_distance) ** 2 / 4
+    return 1 / area
 
 def gamma_parameter(xi: ArrayLike, yi: ArrayLike, T: float) -> float:
     """Ratio of the Coulomb energy to kinetic energy. For bulk electrons on helium 
