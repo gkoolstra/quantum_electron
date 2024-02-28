@@ -1,4 +1,5 @@
 import scipy
+import matplotlib
 from matplotlib import pyplot as plt
 from matplotlib import patheffects as pe
 import matplotlib.animation as animation
@@ -441,7 +442,88 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
             ax.plot(x*1e6, y*1e6, 'ok', mfc=color, mew=0.5, ms=marker_size, 
                     path_effects=[pe.SimplePatchShadow(), pe.Normal()])
 
-    def animate_convergence(self, frame_interval_ms: int=10):
+    
+    def animate_voltage_sweep(self, list_of_voltages: list, list_of_electron_positions: list, coor: tuple=(0, 0), dxdy: tuple=(2, 2), frame_interval_ms: int=10) -> matplotlib.animation.FuncAnimation:
+        """
+        Animates a voltage sweep by updating the voltage and electron positions over time.
+
+        Args:
+            list_of_voltages (list): A list of dictionaries representing the voltages at each frame.
+            list_of_electron_positions (list): A list of arrays representing the electron positions at each frame.
+            coor (tuple, optional): The coordinates of the center of the plot. Defaults to (0, 0).
+            dxdy (tuple, optional): The width and height of the plot. Defaults to (2, 2).
+            frame_interval_ms (int, optional): The time interval between frames in milliseconds. Defaults to 10.
+
+        Returns:
+            matplotlib.animation.FuncAnimation: The animation object.
+
+        Raises:
+            AssertionError: If the length of the voltage list is not the same as the list of electron positions.
+        """
+        assert len(list_of_voltages) == len(list_of_electron_positions), "The length of the voltage list must be the same as the list of electron positions."
+        
+        potential = make_potential(self.potential_dict, list_of_voltages[0])
+        zdata = -potential.T
+
+        fig = plt.figure(figsize=(7,4))
+        ax = fig.add_subplot(111)
+        img_data = ax.imshow(zdata, cmap=plt.cm.RdYlBu_r, extent=[coor[0] - dxdy[0]/2, coor[0] + dxdy[0]/2, 
+                                                                  coor[1] - dxdy[1]/2, coor[1] + dxdy[1]/2])
+        
+        final_x, final_y = r2xy(list_of_electron_positions[0])
+        pts_data = ax.plot(final_x*1e6, final_y*1e6, 'ok', mfc='mediumseagreen', mew=0.5, ms=10, 
+                           path_effects=[pe.SimplePatchShadow(), pe.Normal()])
+
+        cbar = plt.colorbar(img_data)
+        tick_locator = matplotlib.ticker.MaxNLocator(nbins=4)
+        cbar.locator = tick_locator
+        cbar.update_ticks()
+        cbar.ax.set_ylabel(r"Potential energy $-eV(x,y)$")
+
+        xmin, xmax = (coor[0] - dxdy[0]/2, coor[0] + dxdy[0]/2)
+        ymin, ymax = (coor[1] - dxdy[1]/2, coor[1] + dxdy[1]/2)
+        
+        ax.set_xlim(xmin, xmax)
+        ax.set_ylim(ymin, ymax)
+
+        text_boxes = list()
+        initial_voltages = list_of_voltages[0]
+        for k, electrode in enumerate(initial_voltages.keys()):
+            text_boxes.append(ax.text(xmin - 0.75, 
+                                      ymax - k * 0.075 * (ymax - ymin), 
+                                      f"{electrode} = {initial_voltages[electrode]:.2f} V", ha='right', va='top'))
+
+        ax.set_aspect('equal')
+        ax.set_xlabel("$x$"+f" ({chr(956)}m)")
+        ax.set_ylabel("$y$"+f" ({chr(956)}m)")
+        plt.locator_params(axis='both', nbins=4)
+
+        fig.tight_layout()
+                
+        def update(frame):
+            # Update the voltages and electron positions
+            voltages = list_of_voltages[frame]
+            final_x, final_y = r2xy(list_of_electron_positions[frame])
+            
+            potential = make_potential(self.potential_dict, voltages)
+            zdata = -potential.T
+
+            # Update the color plot
+            img_data.set_data(zdata)
+            
+            # Update the electron positions (green dots)
+            pts_data[0].set_xdata(final_x * 1e6)
+            pts_data[0].set_ydata(final_y * 1e6)
+            
+            # Update the voltages to the left of the image
+            for k, electrode in enumerate(voltages.keys()):
+                text_boxes[k].set_text(f"{electrode} = {voltages[electrode]:.2f} V")
+                
+            return (img_data, pts_data, text_boxes)
+
+        return animation.FuncAnimation(fig=fig, func=update, frames=np.arange(len(list_of_voltages)), interval=frame_interval_ms, repeat=True)
+    
+    def animate_convergence(self, frame_interval_ms: int=10) -> matplotlib.animation.FuncAnimation:
         """Animate the convergence data stored in the convergence helper class. 
 
         Args:
