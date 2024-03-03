@@ -101,12 +101,6 @@ class EOMSolver:
         kij_plus = np.zeros((num_electrons, num_electrons))
         kij_minus = np.zeros((num_electrons, num_electrons))
         lij = np.zeros((num_electrons, num_electrons))
-
-        # Xi, Yi = np.meshgrid(xe, ye)
-        # Xj, Yj = Xi.T, Yi.T
-        # XiXj = Xi - Xj
-        # YiYj = Yi - Yj
-        # rij = np.sqrt((XiXj) ** 2 + (YiYj) ** 2)
         
         # Use calculate metrics from eom_solver to take into account periodic boundary conditions
         XiXj, YiYj, rij = self.calculate_metrics(xe, ye) 
@@ -142,7 +136,6 @@ class EOMSolver:
         np.fill_diagonal(kij_minus, 0)
         np.fill_diagonal(lij, 0)
 
-        # Note: not sure where the factor 2 comes from
         Kij_plus = -kij_plus + np.diag(q_e*self.curv_xx(xe, ye) + np.sum(kij_plus, axis=1))
         Kij_minus = -kij_minus + np.diag(q_e*self.curv_yy(xe, ye) + np.sum(kij_minus, axis=1))
         Lij = -lij + np.diag(q_e*self.curv_xy(xe, ye) + np.sum(lij, axis=1))
@@ -189,13 +182,7 @@ class EOMSolver:
 
         # Use calculate metrics from eom_solver to take into account periodic boundary conditions
         XiXj, YiYj, rij = self.calculate_metrics(xe, ye)        
-        
-        # Xi, Yi = np.meshgrid(xe, ye)
-        # Xj, Yj = Xi.T, Yi.T
-        # XiXj = Xi - Xj
-        # YiYj = Yi - Yj
-        # rij = np.sqrt((XiXj) ** 2 + (YiYj) ** 2)
-        
+              
         # Set Xi - Xi to a finite value to avoid dividing by zero.
         np.fill_diagonal(XiXj, 1E-15)
         tij = np.arctan(YiYj / XiXj)
@@ -209,9 +196,9 @@ class EOMSolver:
             # print("Coulomb!")
             # Note that an infinite screening length corresponds to the Coulomb case. Usually it should be twice the
             # helium depth
-            kij_plus = 1 / 4. * q_e ** 2 / (4 * np.pi * eps0) * (1 + 3 * np.cos(2 * tij)) / rij ** 3
-            kij_minus = 1 / 4. * q_e ** 2 / (4 * np.pi * eps0) * (1 - 3 * np.cos(2 * tij)) / rij ** 3
-            lij = 1 / 4. * q_e ** 2 / (4 * np.pi * eps0) * 3 * np.sin(2 * tij) / rij ** 3
+            kij_plus = 1 / 2. * q_e ** 2 / (4 * np.pi * eps0) * (1 + 3 * np.cos(2 * tij)) / rij ** 3
+            kij_minus = 1 / 2. * q_e ** 2 / (4 * np.pi * eps0) * (1 - 3 * np.cos(2 * tij)) / rij ** 3
+            lij = 1 / 2. * q_e ** 2 / (4 * np.pi * eps0) * 3 * np.sin(2 * tij) / rij ** 3
         else:
             # print("Yukawa!")
             rij_scaled = rij / self.screening_length
@@ -228,10 +215,9 @@ class EOMSolver:
         np.fill_diagonal(kij_minus, 0)
         np.fill_diagonal(lij, 0)
 
-        # Note: not sure where the factor 2 comes from
-        Kij_plus = -kij_plus + np.diag(q_e*self.curv_xx(xe, ye) + np.sum(kij_plus, axis=1))
-        Kij_minus = -kij_minus + np.diag(q_e*self.curv_yy(xe, ye) + np.sum(kij_minus, axis=1))
-        Lij = -lij + np.diag(q_e*self.curv_xy(xe, ye) + np.sum(lij, axis=1))
+        Kij_plus = -kij_plus + np.diag(q_e * self.curv_xx(xe, ye) + np.sum(kij_plus, axis=1))
+        Kij_minus = -kij_minus + np.diag(q_e * self.curv_yy(xe, ye) + np.sum(kij_minus, axis=1))
+        Lij = -lij + np.diag(q_e * self.curv_xy(xe, ye) + np.sum(lij, axis=1))
 
         K[1:num_electrons+1,1:num_electrons+1] = Kij_plus
         K[num_electrons+1:2*num_electrons+1, num_electrons+1:2*num_electrons+1] = Kij_minus
@@ -240,7 +226,7 @@ class EOMSolver:
 
         return K, M
 
-    def solve_eom(self, LHS: ArrayLike, RHS: ArrayLike, sort_by_cavity_participation: bool=True, cavity_mode_index: int=0) -> tuple[ArrayLike]:
+    def solve_eom(self, LHS: ArrayLike, RHS: ArrayLike, filter_nan: bool=False, sort_by_cavity_participation: bool=True, cavity_mode_index: int=0) -> tuple[ArrayLike]:
         """Solves the eigenvalues and eigenvectors for the system of equations constructed with setup_eom()
         The order of eigenvalues, and order of the columns of EVecs is coupled. By default scipy sorts this from low eigenvalue to high eigenvalue, however, 
         by flagging sort_by_cavity_participation, this function will return the eigenvalues and vectors sorted by largest cavity contribution first.
@@ -265,6 +251,11 @@ class EOMSolver:
             # Only the columns are ordered, the rows (electrons) are not shuffled. Keep the Evals and Evecs order consistent.
             EVecs = EVecs[:, sorted_order]
             EVals = EVals[sorted_order]
+
+        if filter_nan:
+            # Filter out NaNs
+            EVecs = EVecs[:, EVals > 0]
+            EVals = EVals[EVals > 0]
         
         return np.sqrt(EVals) / (2 * np.pi), EVecs
     
@@ -306,7 +297,7 @@ class EOMSolver:
             plt.arrow(e_x[e_idx] * 1e6, e_y[e_idx] * 1e6, dx=dxs[e_idx], dy=dys[e_idx], width=width, head_length=1.5*3 *width, head_width=3.5*width, 
                     edgecolor='k', lw=0.4, facecolor=color)
     
-    def animate_eigenvectors(self, fig, axs_list: list, eigenvector_list: List[ArrayLike], electron_positions: ArrayLike, 
+    def animate_eigenvectors(self, fig, axs_list: list, eigenvector_list: List[ArrayLike], electron_positions: ArrayLike, marker_size: float=10, 
                              amplitude: float=0.5e-6, time_points: int=31, frame_interval_ms: int=10):
         """Make a matplotlib animation object for saving as a gif, or for displaying in a notebook.
         For use in displaying only:
@@ -339,7 +330,7 @@ class EOMSolver:
 
         all_points = list()
         for ax in axs_list:
-            pts_data = ax.plot(e_x*1e6, e_y*1e6, 'ok', mfc='mediumseagreen', mew=0.5, ms=10, path_effects=[pe.SimplePatchShadow(), pe.Normal()])
+            pts_data = ax.plot(e_x*1e6, e_y*1e6, 'ok', mfc='mediumseagreen', mew=0.5, ms=marker_size, path_effects=[pe.SimplePatchShadow(), pe.Normal()])
             all_points.append(pts_data)
 
         # Only things in the update function will get updated.

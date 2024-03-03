@@ -70,11 +70,33 @@ def density_from_positions(xi: ArrayLike, yi: ArrayLike) -> float:
     YiYj = Yi - Yj
 
     Rij_standard = np.sqrt((XiXj) ** 2 + (YiYj) ** 2)
-    np.fill_diagonal(Rij_standard, 5e-6)
+    np.fill_diagonal(Rij_standard, np.inf)
 
     nearest_neighbor_distance = np.min(Rij_standard, axis=1)
     area = np.pi * np.mean(nearest_neighbor_distance) ** 2 / 4
     return 1 / area
+
+def mean_electron_spacing(xi: ArrayLike, yi: ArrayLike) -> float:
+    """Mean electron spacing calculated from the nearest neighbor distance
+
+    Args:
+        xi (ArrayLike): electron x-positions np.array([x0, x1, ...])
+        yi (ArrayLike): electron y-positions np.array([y0, y1, ...])
+
+    Returns:
+        float: Mean electron spacing in units of m
+    """
+    Xi, Yi = np.meshgrid(xi, yi)
+    Xj, Yj = Xi.T, Yi.T
+
+    XiXj = Xi - Xj
+    YiYj = Yi - Yj
+
+    Rij_standard = np.sqrt((XiXj) ** 2 + (YiYj) ** 2)
+    np.fill_diagonal(Rij_standard, np.inf)
+
+    nearest_neighbor_distance = np.min(Rij_standard, axis=1)
+    return np.mean(nearest_neighbor_distance)
 
 def gamma_parameter(xi: ArrayLike, yi: ArrayLike, T: float) -> float:
     """Ratio of the Coulomb energy to kinetic energy. For bulk electrons on helium 
