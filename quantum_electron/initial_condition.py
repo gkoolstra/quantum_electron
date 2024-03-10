@@ -240,7 +240,7 @@ class InitialCondition:
             y = np.random.uniform(bounds[2], bounds[3])
             
             # Add a random point if it is below the chemical potential and does not overlap with any other point
-            if np.random.rand() < self._density_function(x, y, dot, dot_min, dot_max) and self.no_overlap(points, (x, y), epsilon=epsilon):
+            if np.random.rand() < self._density_function(x, y, dot, dot_min, dot_max) and self._no_overlap(points, (x, y), epsilon=epsilon):
                 points.append((x, y))
                 failures = 0
             else:

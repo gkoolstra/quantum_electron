@@ -7,7 +7,7 @@ import shapely
 from shapely import Polygon
 import numpy as np
 from .utils import find_nearest, xy2r, r2xy, find_minimum_location, make_potential
-from .schrodinger_solver import PotentialVisualization
+from .utils import PotentialVisualization
 from .position_solver import PositionSolver, ConvergenceMonitor
 from .eom_solver import EOMSolver
 from scipy.signal import convolve2d
@@ -335,13 +335,16 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
 
         self.CM = self.ConvergenceMonitor(self.Vtotal, self.grad_total, call_every=1, verbose=verbose)
 
-        # NOTE: Need to check about these numbers.
-        gradient_tolerance = 1e-19
-        epsilon = 1e-19
-
+        # Convergence can happen one of two ways
+        # (a) if the gradient self.grad_total(res['x']) < gradient_tolerance
+        # (b) if res['fun'] changes less than the floating point precision from one iteration to the next.
+        gradient_tolerance = 1.0 # Units are eV/m
+        
+        # For improved performance we use maxls=100. Default is 20, but if starting close to the final solution, sometimes more 
+        # line searches are needed to converge. This is also helpful if the function landscape is very flat.
         trap_minimizer_options = {'method': 'L-BFGS-B',
                                   'jac': self.grad_total,
-                                  'options': {'disp': False, 'gtol': gradient_tolerance, 'eps': epsilon},
+                                  'options': {'disp': False, 'gtol': gradient_tolerance, 'maxls' : 100},
                                   'callback': self.CM.monitor_convergence}
 
         # initial_jacobian = self.grad_total(electron_initial_positions)
