@@ -52,7 +52,6 @@ def select_outer_electrons(xi: ArrayLike, yi: ArrayLike, plot: bool=True, **kwar
     else:
         return None, None
         
-    
 def density_from_positions(xi: ArrayLike, yi: ArrayLike) -> float:
     """Electron density estimate calculated from the nearest neighbor distance
 
@@ -160,6 +159,51 @@ def xy2r(x: ArrayLike, y: ArrayLike) -> ArrayLike:
     else:
         raise ValueError("x and y must have the same length!")
     
+def make_potential(potential_dict: Dict[str, ArrayLike], voltages: Dict[str, float]) -> ArrayLike:
+    """Creates a numpy array potential based on an array of coupling coefficient arrays stored in potential_dict. 
+    The returned potential values are positive for a positive voltage applied to the gate. Therefore, to transform
+    the potential into potential energy, multiply with -1.
+
+    Args:
+        potential_dict (Dict[str, ArrayLike]): Dictionary containing at least the keys also present in the voltages dictionary.
+        The 2d-array associated with each key contains the coupling coefficient for the respective electrode in space.
+        voltages (Dict[str, float]): Dictionary with electrode names as keys. The value associated with each key is the voltage
+        applied to each electrode
+
+    Returns:
+        ArrayLike: Inner product of the coupling coefficient arrays and the voltages. 
+    """
+
+    for k, key in enumerate(list(voltages.keys())):
+        if k == 0: 
+            potential = potential_dict[key] * voltages[key] 
+        else:
+            potential += potential_dict[key] * voltages[key]
+    
+    return potential
+
+def find_minimum_location(potential_dict: Dict[str, ArrayLike], voltages: Dict[str, float], return_potential_value: bool=False) -> tuple[float, float]:
+    """Find the coordinates of the minimum energy point for a single electron.
+
+    Args:
+        potential_dict (Dict[str, ArrayLike]): Potential dictionary.
+        voltages (Dict[str, float]): Voltage dictionary.
+        return_potential_value (bool): Returns the value of the potential energy for a single electron at the minimum location.
+
+    Returns:
+        tuple[float, float]: (x_min, y_min, V_min) where the potential energy for a single electron is minimized. Units are in micron, eV.
+    """
+    
+    potential = make_potential(potential_dict, voltages)
+    zdata = -potential.T
+    
+    xidx, yidx = np.unravel_index(zdata.argmin(), zdata.shape)
+    
+    if return_potential_value:
+        return potential_dict['xlist'][yidx], potential_dict['ylist'][xidx], zdata[xidx, yidx]
+    else:
+        return potential_dict['xlist'][yidx], potential_dict['ylist'][xidx]
+
 def crop_potential(x: ArrayLike, y: ArrayLike, U: ArrayLike, xrange: tuple, yrange: tuple) -> tuple:
     """Crops the potential to the boundaries specified by xrange and yrange. 
 
