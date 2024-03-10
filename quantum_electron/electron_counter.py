@@ -6,8 +6,8 @@ import matplotlib.animation as animation
 import shapely
 from shapely import Polygon
 import numpy as np
-from .utils import find_nearest, xy2r, r2xy
-from .schrodinger_solver import find_minimum_location, make_potential, PotentialVisualization
+from .utils import find_nearest, xy2r, r2xy, find_minimum_location, make_potential
+from .schrodinger_solver import PotentialVisualization
 from .position_solver import PositionSolver, ConvergenceMonitor
 from .eom_solver import EOMSolver
 from scipy.signal import convolve2d
@@ -309,7 +309,7 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
             return 0.0
 
     def get_electron_positions(self, n_electrons: int, electron_initial_positions: Optional[ArrayLike] = None, verbose: bool = False,
-                                    suppress_warnings: bool = False) -> dict:
+                               suppress_warnings: bool = False) -> dict:
         """This is the main method to calculate the electron positions in an electrostatic potential. This function can be called with a specific initial condition, 
         which can be useful during voltage sweeps, or with the default initial condition as specified in generate_initial_condition.
         
@@ -329,6 +329,9 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         if electron_initial_positions is None:
             electron_initial_positions = self.generate_initial_condition(
                 n_electrons)
+            
+        if (len(electron_initial_positions) // 2 != n_electrons) and (not suppress_warnings):
+            print("WARNING: The initial condition does not match n_electrons. n_electrons is ignored.")
 
         self.CM = self.ConvergenceMonitor(self.Vtotal, self.grad_total, call_every=1, verbose=verbose)
 
@@ -387,7 +390,7 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
                 break
         
         if res['status'] > 0 and not(no_electrons_left) and not(suppress_warnings):
-            print("WARNING: Initial minimization for Trap did not converge!")
+            print("WARNING: Initial minimization did not converge!")
             print(f"Final L-inf norm of gradient = {np.amax(res['jac']):.2f} eV/m")
             best_res = res
             print("Please check your initial condition, are all electrons confined in the simulation area?")
@@ -396,7 +399,7 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
             if verbose:
                 print("SUCCESS: Initial minimization for Trap converged!")
                 # This maps the electron positions within the simulation domain
-                print("Perturbing solution %d times at %.2f K. (dx,dy) ~ (%.3f, %.3f) um..."
+                print("Perturbing solution %d times at %.2f K. (dx,dy) ~ (%.3f, %.3f) µm..."
                        % (len(self.trap_annealing_steps), self.trap_annealing_steps[0],
                           np.mean(self.thermal_kick_x(res['x'][::2], res['x'][1::2], self.trap_annealing_steps[0],
                                                       maximum_dx=self.max_x_displacement)) * 1E6,
@@ -523,10 +526,12 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
 
         return animation.FuncAnimation(fig=fig, func=update, frames=np.arange(len(list_of_voltages)), interval=frame_interval_ms, repeat=True)
     
-    def animate_convergence(self, frame_interval_ms: int=10) -> matplotlib.animation.FuncAnimation:
+    def animate_convergence(self, coor: tuple=(0, 0), dxdy: tuple=(2, 2), frame_interval_ms: int=10) -> matplotlib.animation.FuncAnimation:
         """Animate the convergence data stored in the convergence helper class. 
 
         Args:
+            coor (tuple, optional): The coordinates of the center of the plot. Defaults to (0, 0).
+            dxdy (tuple, optional): The width and height of the plot. Defaults to (2, 2).
             frame_interval_ms (int, optional): Interval between frames in milliseconds. Defaults to 10.
 
         Returns:
@@ -536,7 +541,7 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         r = self.CM.curr_xk
         
         fig, ax = plt.subplots(1, 1, figsize=(4, 4))
-        self.plot_potential_energy(ax=ax, dxdy=(2, 2), print_voltages=False, plot_contours=False)
+        self.plot_potential_energy(ax=ax, coor=coor, dxdy=dxdy, print_voltages=False, plot_contours=False)
         
         rx, ry = r2xy(r[0, :])
         pts_data = ax.plot(rx*1e6, ry*1e6, 'ok', mfc='mediumseagreen', mew=0.5, ms=10, path_effects=[pe.SimplePatchShadow(), pe.Normal()])

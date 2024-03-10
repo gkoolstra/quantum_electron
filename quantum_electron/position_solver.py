@@ -539,12 +539,15 @@ class PositionSolver:
                     print("\tNew minimum was found after perturbing!")
                 best_result = res
             elif res['status'] == 0 and res['fun'] > best_result['fun']:
-                pass  # No new minimum was found after perturbation, this is quite common.
+                if do_print:
+                    print("\tNo new minimum was found after perturbation.")
+                # No new minimum was found after perturbation, this is quite common.
             elif res['status'] != 0 and res['fun'] < best_result['fun']:
                 if do_print:
                     print("\tThere is a lower state, but minimizer didn't converge!")
             elif res['status'] != 0 and res['fun'] > best_result['fun']:
-                pass
+                if do_print:
+                    print("\tSimulation didn't converge after perturbation.")
 
         return best_result
 

@@ -27,6 +27,11 @@ To generate animations, this module relies on `ffmpeg`. On MacOS this can be eas
 
 This module also integrates well with the output of the FEM software [ZeroHeliumKit](https://github.com/eeroqlab/zeroheliumkit). Please refer to any dependencies for ZHK on the linked github page.
 
+## To-do list
+- [ ] Standardize units of the arguments. Sometimes it is unclear whether to use microns or meters.
+- [ ] Figure out how to handle warning messages for convergence issues. Why do problems sometimes have a hard time converging?
+- [ ] Move PotentialVisualization from `schrodinger_solver` to `utils`
+
 ## Getting started
 The best way to learn how to use the module is to browse the examples. At a very high level this is the workflow:
 
