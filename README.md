@@ -30,6 +30,13 @@ This module also integrates well with the output of the FEM software [ZeroHelium
 ## To-do list
 - [ ] Standardize units of the arguments. Sometimes it is unclear whether to use microns or meters.
 - [ ] Figure out how to handle warning messages for convergence issues. Why do problems sometimes have a hard time converging?
+- [ ] Write documentation for example notebook 03
+- [ ] Find a place for the code in example notebook 04.
+- [ ] Split off the Schrodinger solver?
+- [ ] Add some documentation to the library folder
+
+## Test suite
+To test the performance of the minimization, we're building and expanding a suite of tests based on the `pytest` framework. To run these tests, `cd` into the main module directory and run `pytest`. Currently, we have implemented a test in `test_wigner_molecules.py`, which compares the energy per particle of Wigner molecules in a parabolic confinement to known tabulated values.
 
 ## Getting started
 The best way to learn how to use the module is to browse the examples. At a very high level this is the workflow:
@@ -51,9 +58,7 @@ f.plot_electron_positions(res)
 
 There are a number of options that influence the solution of the minimization problem. Here is a dictionary of options that can be passed to `FullModel` to get started: 
 ```
-options = {"f0" : 4e9, # Resonance frequency for the resonator (only used for solving motional frequencies)
-           "Z0" : 50.0, # Resonator impedance (only used for solving motional frequencies)
-           "include_screening" : True, # Include screening of electron-electron interactions due to thin film.
+options = {"include_screening" : True, # Include screening of electron-electron interactions due to thin film.
            "screening_length" : 2e-6, # Typically helium thickness.
            "potential_smoothing" : 5e-4, # Numerical smoothing of the splines (gets rid of some noise, can introduce artifacts)
            "remove_unbound_electrons" : False, # Removes electrons if they shot outside the solution box.

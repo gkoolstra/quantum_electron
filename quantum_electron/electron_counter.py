@@ -21,7 +21,7 @@ from typing import List, Dict, Optional
 
 class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
     def __init__(self, potential_dict: Dict[str, ArrayLike], voltage_dict: Dict[str, float], 
-                 f0: float = 4e9, Z0: float = 50, include_screening : bool = False, screening_length : float = np.inf, 
+                 include_screening : bool = False, screening_length : float = np.inf, 
                  potential_smoothing: float = 5e-4, remove_unbound_electrons : bool = False, remove_bounds : Optional[tuple] = None, 
                  trap_annealing_steps: list = [0.1] * 5, max_x_displacement: float = 0.2e-6, max_y_displacement: float = 0.2e-6) -> None:
         """This class can be used to determine the coordinates of electrons in an electrostatic potential and solve for the in-plane equations of motion.
@@ -43,9 +43,6 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         self.potential_dict = potential_dict
         self.voltage_dict = voltage_dict
 
-        self.f0 = f0
-        self.Z0 = Z0
-
         self.include_screening = include_screening
         self.screening_length = screening_length
         self.potential_smoothing = potential_smoothing
@@ -63,11 +60,12 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
 
         potential = make_potential(potential_dict, voltage_dict)
 
+        # Inherit methods from the PositionSolver, EOMSolver and PotentialVisualization classes
         PositionSolver.__init__(self, potential_dict['xlist'] * 1e-6, potential_dict['ylist'] * 1e-6, -potential,
                                 spline_order_x=self.spline_order, spline_order_y=self.spline_order,
                                 smoothing=self.potential_smoothing, include_screening=self.include_screening, screening_length=self.screening_length)
 
-        EOMSolver.__init__(self, self.f0, self.Z0, Ex=self.Ex, Ey=self.Ey, 
+        EOMSolver.__init__(self, Ex=self.Ex, Ey=self.Ey, 
                            Ex_up=self.Ex_up, Ex_down=self.Ex_down, Ey_up=self.Ey_up, Ey_down=self.Ey_down, 
                            curv_xx=self.ddVdx, curv_xy=self.ddVdxdy, curv_yy=self.ddVdy)
 
@@ -338,7 +336,7 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         # Convergence can happen one of two ways
         # (a) if the gradient self.grad_total(res['x']) < gradient_tolerance
         # (b) if res['fun'] changes less than the floating point precision from one iteration to the next.
-        gradient_tolerance = 1.0 # Units are eV/m
+        gradient_tolerance = 1e-1 # Units are eV/m
         
         # For improved performance we use maxls=100. Default is 20, but if starting close to the final solution, sometimes more 
         # line searches are needed to converge. This is also helpful if the function landscape is very flat.
@@ -451,7 +449,8 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
     
     def animate_voltage_sweep(self, list_of_voltages: list, list_of_electron_positions: list, coor: tuple=(0, 0), dxdy: tuple=(2, 2), frame_interval_ms: int=10) -> matplotlib.animation.FuncAnimation:
         """
-        Animates a voltage sweep by updating the voltage and electron positions over time.
+        Animates a voltage sweep by updating the voltage and electron positions over time. 
+        This function only animates the sweep, it does not calculate the electron positions. This needs to be done beforehand.
 
         Args:
             list_of_voltages (list): A list of dictionaries representing the voltages at each frame.

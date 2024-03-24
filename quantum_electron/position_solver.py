@@ -234,11 +234,14 @@ class PositionSolver:
         return XiXj, YiYj, Rij
 
     def V(self, xi: ArrayLike, yi: ArrayLike) -> ArrayLike:
-        """
-        Evaluate the electrostatic potential at coordinates xi, yi
-        :param xi: a 1D array, or float
-        :param yi: a 1D array or float
-        :return: Interpolated value(s) of the data supplied to __init__ at values (xi, yi)
+        """Returns the electrostatic potential at the coordinates xi, yi.
+
+        Args:
+            xi (ArrayLike): a 1D array, or float
+            yi (ArrayLike): a 1D array, or float
+
+        Returns:
+            ArrayLike: Electrostatic energy at coordinates xi, yi in units of electronvolts.
         """
         if 'x' in self.periodic_boundaries:
             xi = self.map_x_into_domain(xi)
@@ -247,13 +250,17 @@ class PositionSolver:
         return self.interpolator.ev(xi, yi)
 
     def Velectrostatic(self, xi: ArrayLike, yi: ArrayLike) -> float:
-        """
-        When supplying two arrays of size n to V, it returns an array
+        """When supplying two arrays of size n to V, it returns an array
         of size nxn, according to the meshgrid it has evaluated. We're only interested
         in the sum of the diagonal elements, so we take the sum and this represents
         the sum of the static energy of the n particles in the potential.
-        :param xi: a 1D array, or float
-        :param yi: a 1D array or float
+
+        Args:
+            xi (ArrayLike): a 1D array, or float
+            yi (ArrayLike): a 1D array, or float
+
+        Returns:
+            float: Total electrostatic energy of the system in units of Joules.
         """
         if 'x' in self.periodic_boundaries:
             xi = self.map_x_into_domain(xi)
@@ -262,11 +269,17 @@ class PositionSolver:
         return q_e * np.sum(self.V(xi, yi))
 
     def Vee(self, xi: ArrayLike, yi: ArrayLike, eps: float=1E-15) -> ArrayLike:
-        """
-        Returns the repulsion potential between two electrons separated by a distance sqrt(|xi-xj|**2 + |yi-yj|**2)
-        Note the factor 1/2. in front of the potential energy to avoid overcounting.
-        :param xi: a 1D array, or float
-        :param yi: a 1D array or float
+        """Returns the repulsive potential between two electrons separated by a distance sqrt(|xi-xj|**2 + |yi-yj|**2)
+        Note the factor 1/2. in front of the potential energy to avoid overcounting. This is chosen such that taking the sum
+        np.sum(Vee(xi, yi)) gives the total interaction energy of the system (without double counting).
+
+        Args:
+            xi (ArrayLike): a 1D array, or float
+            yi (ArrayLike): a 1D array, or float
+            eps (float, optional): _description_. Defaults to 1E-15.
+
+        Returns:
+            ArrayLike: 2D array containing the pairwise electron-electron interaction energies in units of Joules.
         """
         
         if len(self.periodic_boundaries) == 0:
@@ -290,28 +303,37 @@ class PositionSolver:
             return + 1 / 2. * q_e ** 2 / (4 * np.pi * eps0) * 1 / Rij
 
     def Vtotal(self, r: ArrayLike) -> float:
-        """
-        This can be used as a cost function for the optimizer.
-        Returns the total energy of N electrons
-        r is a 0D array with coordinates of the electrons.
-        The x-coordinates are thus given by the even elements of r: r[::2],
-        whereas the y-coordinates are the odd ones: r[1::2]
-        :param r: r = np.array([x0, y0, x1, y1, x2, y2, ... , xN, yN])
-        :return: Scalar with the total energy of the system.
+        """This function can be used as a cost function for the optimizer.
+        It returns the total energy of N electrons in units of eV. r is a 0D array with coordinates of the electrons.
+        The x-coordinates are thus given by the even elements of r: r[::2], whereas the y-coordinates are the odd ones: r[1::2]
+
+        Args:
+            r (ArrayLike): r = np.array([x0, y0, x1, y1, x2, y2, ... , xN, yN])
+
+        Returns:
+            float: Scalar with the total energy of the system in units of electron volts.
         """
         xi, yi = r[::2], r[1::2]
+
+        # First calculate the electrostatic component, units are Joules
         Vtot = self.Velectrostatic(xi, yi)
+
+        # Add the interaction energy between the particles, units are Joules
         interaction_matrix = self.Vee(xi, yi)
         np.fill_diagonal(interaction_matrix, 0)
         Vtot += np.sum(interaction_matrix)
+        # Return the total energy in units of eV.
         return Vtot / q_e
 
     def dVdx(self, xi: ArrayLike, yi: ArrayLike) -> ArrayLike:
-        """
-        Derivative of the electrostatic potential in the x-direction.
-        :param xi: a 1D array, or float
-        :param yi: a 1D array or float
-        :return:
+        """Calculate the derivative of the electrostatic potential in the x-direction.
+
+        Args:
+            xi (ArrayLike): a 1D array, or float
+            yi (ArrayLike): a 1D array, or float
+
+        Returns:
+            ArrayLike: First derivative of the electrostatic potential in the x-direction.
         """
         if 'x' in self.periodic_boundaries:
             xi = self.map_x_into_domain(xi)
@@ -319,12 +341,16 @@ class PositionSolver:
             yi = self.map_y_into_domain(yi)
         return self.interpolator.ev(xi, yi, dx=1, dy=0)
 
-    def ddVdx(self, xi: ArrayLike, yi: ArrayLike):
-        """
-        Second derivative of the electrostatic potential in the x-direction.
-        :param xi: a 1D array, or float
-        :param yi: a 1D array or float
-        :return:
+    def ddVdx(self, xi: ArrayLike, yi: ArrayLike) -> ArrayLike:
+        """Calculate the diagonal element of the Hessian matrix. 
+        This is used as input for the EOMSolver class (curv_xx)
+
+        Args:
+            xi (ArrayLike): a 1D array, or float
+            yi (ArrayLike): a 1D array, or float
+
+        Returns:
+            ArrayLike: Second derivative of the electrostatic potential in the x-direction.
         """
         if 'x' in self.periodic_boundaries:
             xi = self.map_x_into_domain(xi)
@@ -333,11 +359,14 @@ class PositionSolver:
         return self.interpolator.ev(xi, yi, dx=2, dy=0)
 
     def dVdy(self, xi: ArrayLike, yi: ArrayLike) -> ArrayLike:
-        """
-        Derivative of the electrostatic potential in the y-direction
-        :param xi: a 1D array, or float
-        :param yi: a 1D array or float
-        :return:
+        """Calculate the derivative of the electrostatic potential in the y-direction.
+
+        Args:
+            xi (ArrayLike): a 1D array, or float
+            yi (ArrayLike): a 1D array, or float
+
+        Returns:
+            ArrayLike: First derivative of the electrostatic potential in the y-direction.
         """
         if 'x' in self.periodic_boundaries:
             xi = self.map_x_into_domain(xi)
@@ -346,11 +375,15 @@ class PositionSolver:
         return self.interpolator.ev(xi, yi, dx=0, dy=1)
 
     def ddVdy(self, xi: ArrayLike, yi: ArrayLike) -> ArrayLike:
-        """
-        Second derivative of the electrostatic potential in the y-direction.
-        :param xi: a 1D array, or float
-        :param yi: a 1D array or float
-        :return:
+        """Calculate the diagonal element of the Hessian matrix. 
+        This is used as input for the EOMSolver class (curv_yy)
+
+        Args:
+            xi (ArrayLike): a 1D array, or float
+            yi (ArrayLike): a 1D array, or float
+
+        Returns:
+            ArrayLike: Second derivative of the electrostatic potential in the y-direction.
         """
         if 'x' in self.periodic_boundaries:
             xi = self.map_x_into_domain(xi)
@@ -359,11 +392,15 @@ class PositionSolver:
         return self.interpolator.ev(xi, yi, dx=0, dy=2)
 
     def ddVdxdy(self, xi: ArrayLike, yi: ArrayLike) -> ArrayLike:
-        """
-        Second derivative of the electrostatic potential in the y-direction.
-        :param xi: a 1D array, or float
-        :param yi: a 1D array or float
-        :return:
+        """Calculate the off-diagonal element of the Hessian matrix. 
+        This is used as input for the EOMSolver class (curv_xy)
+
+        Args:
+            xi (ArrayLike): a 1D array, or float
+            yi (ArrayLike): a 1D array or float
+
+        Returns:
+            ArrayLike: Cross derivative of the electrostatic potential in the x and y directions.
         """
         if 'x' in self.periodic_boundaries:
             xi = self.map_x_into_domain(xi)
@@ -373,12 +410,15 @@ class PositionSolver:
         return self.interpolator.ev(xi, yi, dx=1, dy=1)
 
     def grad_Vee(self, xi: ArrayLike, yi: ArrayLike, eps: float=1E-15) -> ArrayLike:
-        """
-        Derivative of the electron-electron interaction term
-        :param xi: a 1D array, or float
-        :param yi: a 1D array or float
-        :param eps: A small but non-zero number to avoid triggering Warning message. Exact value is irrelevant.
-        :return: 1D-array of size(xi) + size(yi)
+        """Derivative of the electron-electron interaction term
+
+        Args:
+            xi (ArrayLike): a 1D array, or float
+            yi (ArrayLike): a 1D array, or float
+            eps (float, optional): A small but non-zero number to avoid triggering Warning message. Exact value is irrelevant. Defaults to 1E-15.
+
+        Returns:
+            ArrayLike: 1D-array of length len(xi) + len(yi)
         """
         if len(self.periodic_boundaries) == 0:
             Xi, Yi = np.meshgrid(xi, yi)
@@ -420,10 +460,14 @@ class PositionSolver:
         return gradient
 
     def grad_total(self, r: ArrayLike) -> float:
-        """
-        Total derivative of the cost function. This may be used in the optimizer to converge faster.
-        :param r: r = np.array([x0, y0, x1, y1, x2, y2, ... , xN, yN])
-        :return: 1D array of length len(r), where grad_total = np.array([dV/dx|r0, dV/dy|r0, ...])
+        """Total derivative of the cost function. This function can be supplied as an argument to 
+         the scipy minimizer, which typically helps to converge to the ground state faster.
+
+        Args:
+            r (ArrayLike): r = np.array([x0, y0, x1, y1, x2, y2, ... , xN, yN])
+
+        Returns:
+            float: 1D array of length len(r), where grad_total = np.array([dV/dx|r0, dV/dy|r0, ...])
         """
         xi, yi = r[::2], r[1::2]
         gradient = np.zeros(len(r))
@@ -505,16 +549,21 @@ class PositionSolver:
     def perturb_and_solve(self, cost_function: callable, N_perturbations: int, T: float, solution_data_reference: dict,
                           maximum_dx: Optional[float]=None, maximum_dy: Optional[float]=None, do_print: bool=True, 
                           **minimizer_options) -> dict:
-        """
-        This function is to be run after a minimization by scipy.optimize.minimize has already occured.
-        It takes the output of that function in solution_data_reference and tries to find a lower energy state
-        by perturbing the system N_perturbation times at temperature T. See thermal_kick_x and thermal_kick_y.
-        :param cost_function: A function that takes the electron positions and returns the total energy
-        :param N_perturbations: Integer, number of perturbations to find a new minimum
-        :param T: Temperature to perturb the system at. This is used to convert to a motion.
-        :param solution_data_reference: output of scipy.optimize.minimize
-        :param minimizer_options: Dictionary with optimizer options. See scipy.optimize.minimize
-        :return: output of minimize with the lowest evaluated cost function
+        """This function should only be called after scipy.optimize.minimize has been called.
+        It takes the output of scipy.optimize.minimize in solution_data_reference and tries to find a lower energy state
+        by perturbing the electron positions N_perturbation times at temperature T. See thermal_kick_x and thermal_kick_y.
+
+        Args:
+            cost_function (callable): A function that takes the electron positions and returns the total energy
+            N_perturbations (int): Number of allowed perturbations to find a new minimum
+            T (float): Temperature to perturb the system at. This is used to convert to a motion.
+            solution_data_reference (dict): Output of scipy.optimize.minimize
+            maximum_dx (Optional[float], optional): Maximum perturbation in the x-direction units of meters. Defaults to None.
+            maximum_dy (Optional[float], optional): Maximum perturbation in the y-direction units of meters. . Defaults to None.
+            do_print (bool, optional): Print the status of the trials. Defaults to True.
+
+        Returns:
+            dict: Output of the minimizer with the lowest evaluated cost function.
         """
         electron_initial_positions = solution_data_reference['x']
         best_result = solution_data_reference
@@ -550,15 +599,3 @@ class PositionSolver:
                     print("\tSimulation didn't converge after perturbation.")
 
         return best_result
-
-    def calculate_mu(self, ri: ArrayLike) -> ArrayLike:
-        electrons_x, electrons_y = r2xy(ri)
-        interactions = self.Vee(electrons_x, electrons_y) / q_e
-        np.fill_diagonal(interactions, 0)
-        mu = list()
-        el = 0
-        for electron_x, electron_y in zip(electrons_x, electrons_y):
-            mu.append(np.sum(interactions[el, :]) + self.Velectrostatic(electron_x, electron_y) / 1.602E-19)
-            el += 1
-
-        return np.array(mu)

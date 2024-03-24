@@ -5,8 +5,6 @@ from matplotlib import pyplot as plt
 from .utils import construct_symmetric_y, make_potential, find_minimum_location, PotentialVisualization
 from scipy import sparse
 from scipy.sparse.linalg import eigsh
-from numpy import pi, linspace, cos, sin, ones, transpose, reshape, array, argsort, sort, \
-    meshgrid, amax, amin, dot, sqrt, exp, tanh, sign, argmax
 from numpy.linalg import eig
 from scipy.constants import hbar, m_e, elementary_charge as q_e
 from typing import Dict, List, Optional
@@ -31,7 +29,7 @@ class Schrodinger:
         """normalizes a vector
             @param vec vector to normalize
         """
-        return vec / sqrt(dot(vec, vec))
+        return vec / np.sqrt(np.dot(vec, vec))
 
     @staticmethod
     def Dmat(numpts, delta=1):
@@ -39,11 +37,11 @@ class Schrodinger:
             @param numpts dimension of derivative matrix
             @param delta optional scaling of point spacing
         """
-        a = 0.5 / delta * ones(numpts)
+        a = 0.5 / delta * np.ones(numpts)
         a[0] = 0
         a[-2] = 0
         #b=-2./delta**2*ones(numpts); b[0]=0;b[-1]=0
-        c = -0.5 / delta * ones(numpts)
+        c = -0.5 / delta * np.ones(numpts)
         c[1] = 0
         c[-1] = 0
         return sparse.spdiags([a, c], [-1, 1], numpts, numpts)
@@ -57,15 +55,15 @@ class Schrodinger:
             @param q is a quasimomentum between -pi and pi, which is used if periodic=True
         """
 
-        a = 1. / delta ** 2 * ones(numpts)
-        b = -2. / delta ** 2 * ones(numpts)
-        c = 1. / delta ** 2 * ones(numpts)
+        a = 1. / delta ** 2 * np.ones(numpts)
+        b = -2. / delta ** 2 * np.ones(numpts)
+        c = 1. / delta ** 2 * np.ones(numpts)
         #print "delta = %f" % (delta)
         if periodic:
             if q == 0:
                 return sparse.spdiags([c, a, b, c, c], [-numpts + 1, -1, 0, 1, numpts - 1], numpts, numpts)
             else:
-                return sparse.spdiags([exp(-(0. + 1.j) * q) * c, a, b, c, exp((0. + 1.j) * q) * c],
+                return sparse.spdiags([np.exp(-(0. + 1.j) * q) * c, a, b, c, np.exp((0. + 1.j) * q) * c],
                                       [-numpts + 1, -1, 0, 1, numpts - 1], numpts, numpts)
         else:
             return sparse.spdiags([a, b, c], [-1, 0, 1], numpts, numpts)
@@ -83,8 +81,8 @@ class Schrodinger:
             en, ev = eig(Hmat.todense())
         else:
             en, ev = eigsh(Hmat, **self.sparse_args)
-        ev = transpose(array(ev))[argsort(en)]
-        en = sort(en)
+        ev = np.transpose(np.array(ev))[np.argsort(en)]
+        en = np.sort(en)
         self.en = en
         self.ev = ev
         self.solved = True
@@ -107,10 +105,10 @@ class Schrodinger:
         """
         if not self.solved: self.solve()
         if sparse.issparse(operator):
-            return array([array([dot(psi1, operator.dot(psi2)) for psi2 in self.psis(num_levels)]) for psi1 in
+            return np.array([np.array([np.dot(psi1, operator.dot(psi2)) for psi2 in self.psis(num_levels)]) for psi1 in
                           self.psis(num_levels)])
         else:
-            return array([array([dot(psi1, dot(operator, psi2)) for psi2 in self.psis(num_levels)]) for psi1 in
+            return np.array([np.array([np.dot(psi1, np.dot(operator, psi2)) for psi2 in self.psis(num_levels)]) for psi1 in
                           self.psis(num_levels)])
             
 class Schrodinger2D(Schrodinger):
@@ -151,7 +149,7 @@ class Schrodinger2D(Schrodinger):
     def get_2Dpsis(self, num_levels=-1):
         psis = []
         for psi in self.psis(num_levels):
-            psis.append(reshape(psi, (len(self.y), len(self.x))))
+            psis.append(np.reshape(psi, (len(self.y), len(self.x))))
         return psis
 
     def plot(self, num_levels=10):

@@ -10,22 +10,17 @@ from matplotlib import patheffects as pe
 from IPython import display 
 
 class EOMSolver:
-    def __init__(self, f0: float, Z0: float, Ex: callable, Ey: callable, Ex_up: callable, Ex_down: callable, Ey_up: callable, Ey_down: callable, 
+    def __init__(self, Ex: callable, Ey: callable, Ex_up: callable, Ex_down: callable, Ey_up: callable, Ey_down: callable, 
                  curv_xx: callable, curv_xy: callable, curv_yy: callable) -> None:
         """Class that sets up the equations of motion in matrix form and solves them.
 
         Args:
-            f0 (float): Resonance frequency of the RF-mode that primarily couples to the electron mode.
-            Z0 (float): Impedance of the RF-mode.
             Ex (callable): Electric field in the x-direction. This function is inherited from the FullModel class.
             Ey (callable): Electric field in the y-direction. This function is inherited from the FullModel class.
             curv_xx (callable): Second derivative of the electrostatic potential:  d^2 / dx^2 V. This function is inherited from the PositionSolver class.
             curv_xy (callable): Second derivative of the electrostatic potential:  d^2 / dx dy V. This function is inherited from the PositionSolver class.
             curv_yy (callable): Second derivative of the electrostatic potential:  d^2 / dy^2 V. This function is inherited from the PositionSolver class.
         """
-        self.f0 = f0
-        self.Z0 = Z0
-            
         # Electric field functions for the simple single-mode LC circuit    
         self.Ex = Ex
         self.Ey = Ey
@@ -42,9 +37,18 @@ class EOMSolver:
     
     def setup_eom_coupled_lc(self, ri: ArrayLike, resonator_dict: Dict) -> tuple[ArrayLike]:
         """
-        Set up the Matrix used for determining the electron motional frequencies.
-        :param electron_positions: Electron positions, in the form [x0, y0, x1, y1, ...]
-        :return: M^(-1) * K
+        Set up the Matrix used for determining the electron motional frequencies and cavity frequency.
+        This function is used for the coupled LC resonator model. The electrons are located in between the plates of the 
+        capacitor Cdot.
+
+        Args:
+            ri (ArrayLike): Electron positions, in the form [x0, y0, x1, y1, ...]
+            resonator_dict (Dict): Dictionary containing the parameters of the resonator. Must have L1, L2, C1, C2, Cdot, mode.
+            Here L1, C1 are the inductance and capacitance of the first resonator, L2, C2 are the inductance and capacitance of the second resonator.
+            Cdot is the coupling capacitance between the two resonators. The mode key sets the f0 parameter and is used in get_cavity_frequency_shift.
+
+        Returns:
+            tuple[ArrayLike]: kinetic matrix K, and mass matrix M
         """
         C1 = resonator_dict['C1']
         C2 = resonator_dict['C2']
@@ -57,9 +61,11 @@ class EOMSolver:
         # We first solve the cavity equations without electrons to identify the common and differential modes
         D = C1 * C2 + C1 * Cdot + C2 * Cdot
 
+        # Mass matrix of the cavity only
         M = np.array([[L1, 0], 
                       [0, L2]])
 
+        # Kinetic matrix of the cavity only
         K = np.array([[(C2 + Cdot) / D, Cdot / D], 
                       [Cdot / D, (C1 + Cdot) / D]])
 
@@ -103,6 +109,7 @@ class EOMSolver:
         lij = np.zeros((num_electrons, num_electrons))
         
         # Use calculate metrics from eom_solver to take into account periodic boundary conditions
+        # This method is inherited from the PositionSolver class
         XiXj, YiYj, rij = self.calculate_metrics(xe, ye) 
         
         np.fill_diagonal(XiXj, 1E-15)
@@ -147,14 +154,24 @@ class EOMSolver:
 
         return K, M
     
-    def setup_eom(self, ri: ArrayLike, periodic_boundaries=[]) -> tuple[ArrayLike]:
+    def setup_eom(self, ri: ArrayLike, resonator_dict: Dict) -> tuple[ArrayLike]:
+        """Set up the Matrix used for determining the electron motional frequencies and cavity frequency.
+        This function is used for a simple LC resonator model. The electrons are located in between the 
+        plates of the capacitor C. 
+
+        Args:
+            ri (ArrayLike): Electron positions, in the form [x0, y0, x1, y1, ...]
+            resonator_dict (Dict): Dictionary containing the parameters of the resonator. Must have f0, Z0 as keys.
+            f0 is the frequency of the resonator, and Z0 is the impedance of the resonator.
+
+        Returns:
+            tuple[ArrayLike]: kinetic matrix K, and mass matrix M
         """
-        Set up the Matrix used for determining the electron frequency.
-        :param electron_positions: Electron positions, in the form [x0, y0, x1, y1, ...]
-        :return: M^(-1) * K
-        """
+        # Instantiate this for use in get_cavity_frequency_shift
+        self.f0 = resonator_dict['f0']
+
         omega0 = 2 * np.pi * self.f0
-        L = self.Z0 / omega0
+        L = resonator_dict['Z0'] / omega0
         C = 1 / (omega0**2 * L)
         self.num_cavity_modes = 1
 
@@ -181,6 +198,7 @@ class EOMSolver:
         lij = np.zeros((num_electrons, num_electrons))
 
         # Use calculate metrics from eom_solver to take into account periodic boundary conditions
+        # This method is inherited from the PositionSolver class
         XiXj, YiYj, rij = self.calculate_metrics(xe, ye)        
               
         # Set Xi - Xi to a finite value to avoid dividing by zero.
