@@ -1,9 +1,10 @@
+![example workflow](https://github.com/gkoolstra/quantum_electron/actions/workflows/python-app.yml/badge.svg)
 # Quantum electron solver
 This package has two main functions
 1. It can simulate electron positions in a two dimensional plane for electrons confined in an electrostatic potential. The electron-electron interactions are also taken into account.
 2. It can solve the Schrodinger equation for a single electron confined in an electrostatic potential.
 
-In both cases there are methods to calculate couplings to a resonator and resonator frequency shifts due to electrons. This is useful the electrons are detected with a microwave resonator. If your experimental setup does not contain a resonator, you can safely ignore the methods in this library without compromise of the results. 
+In both cases there are methods to calculate couplings to a resonator and resonator frequency shifts due to electrons. This is useful the electrons are detected with a microwave resonator. If your experimental setup does not contain a resonator, you can safely ignore the methods in this library without compromising the results. 
 
 After installation, it is advised to take a look at the `examples` folder to explore some of the functionalities of this module. 
 
@@ -70,7 +71,7 @@ options = {"include_screening" : True, # Include screening of electron-electron 
 
 
 ## Tips for the initial condition
-The initial condition can affect the final minimization result quite strongly. If there are issues with convergence you can first check convergence with `f.plot_convergence()`. A good final value for the cost function is ~1-500 eV/m. If the lowest value of the cost function is signifantly higher than this, or if warnings appear, here are some rules of thumb for successful convergence:
+The initial condition can affect the final minimization result quite strongly. We encourage you to take a look at the example notebook about initial conditions. If there are issues with convergence you can first check convergence with `f.plot_convergence()`. A good final value for the cost function is ~1-500 eV/m. If the lowest value of the cost function is signifantly higher than this, or if warnings appear, here are some rules of thumb for successful convergence:
 1. Don't create an initial condition where too many electrons are placed in a small area.
 2. Don't place electrons in an initial condition where the potential is too flat, such as on a ground plane. 
 3. Be mindful of electron sinks, i.e. channels for electrons to escape. These can appear if an electrode is adjacent to the ground plane, and has an applied voltage that is more positive than the ground plane.
