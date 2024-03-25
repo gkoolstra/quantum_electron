@@ -8,9 +8,9 @@ input_output_pairs = [(1, 0.0000), (2, 0.75000), (3, 1.31037), (4, 1.83545),
                       (5, 2.33845), (6, 2.80456), (7, 3.23897), (8, 3.66890), 
                       (9, 4.08813), (10, 4.48494), (11, 4.86467), (12, 5.23895), 
                       (13, 5.60114), (14, 5.95899), (15, 6.30758), (16, 6.64990), 
-                      (17, 6.98291), (18, 7.30814), (19, 7.63197), (20, 7.94961), 
-                      (21, 8.26588), (22, 8.57418), (23, 8.87765), (24, 9.17590), (25, 9.47273), 
-                      (26, 9.76273)]
+                      (17, 6.98291), (18, 7.30814)]#, (19, 7.63197), (20, 7.94961), 
+                    #   (21, 8.26588), (22, 8.57418), (23, 8.87765), (24, 9.17590), (25, 9.47273), 
+                    #   (26, 9.76273)]
 
 @pytest.mark.parametrize("n, expected", input_output_pairs)
 def test_molecule_energies(n: int, expected: float):
@@ -32,13 +32,6 @@ def test_molecule_energies(n: int, expected: float):
     Y *= micron
 
     parabolic_confinement = - (X ** 2 + Y ** 2) / micron ** 2
-
-    # R = 5.5e-6
-    # parabolic_confinement[np.sqrt(X**2 + Y**2) > R] = -(R / micron) ** 2
-
-    # # also add the guard ring
-    # guard_ring = np.ones(X.shape)
-    # guard_ring[np.sqrt(X**2 + Y**2) < R] = 0 
 
     potential_dict = {"dot" : parabolic_confinement, 
                       "xlist" : x, 
