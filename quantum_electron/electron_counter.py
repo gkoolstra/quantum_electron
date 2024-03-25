@@ -1,12 +1,13 @@
 import scipy
+import matplotlib
 from matplotlib import pyplot as plt
 from matplotlib import patheffects as pe
 import matplotlib.animation as animation
 import shapely
 from shapely import Polygon
 import numpy as np
-from .utils import find_nearest, xy2r, r2xy
-from .schrodinger_solver import find_minimum_location, make_potential, PotentialVisualization
+from .utils import find_nearest, xy2r, r2xy, find_minimum_location, make_potential
+from .utils import PotentialVisualization
 from .position_solver import PositionSolver, ConvergenceMonitor
 from .eom_solver import EOMSolver
 from scipy.signal import convolve2d
@@ -20,7 +21,7 @@ from typing import List, Dict, Optional
 
 class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
     def __init__(self, potential_dict: Dict[str, ArrayLike], voltage_dict: Dict[str, float], 
-                 f0: float = 4e9, Z0: float = 50, include_screening : bool = False, screening_length : float = np.inf, 
+                 include_screening : bool = False, screening_length : float = np.inf, 
                  potential_smoothing: float = 5e-4, remove_unbound_electrons : bool = False, remove_bounds : Optional[tuple] = None, 
                  trap_annealing_steps: list = [0.1] * 5, max_x_displacement: float = 0.2e-6, max_y_displacement: float = 0.2e-6) -> None:
         """This class can be used to determine the coordinates of electrons in an electrostatic potential and solve for the in-plane equations of motion.
@@ -42,9 +43,6 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         self.potential_dict = potential_dict
         self.voltage_dict = voltage_dict
 
-        self.f0 = f0
-        self.Z0 = Z0
-
         self.include_screening = include_screening
         self.screening_length = screening_length
         self.potential_smoothing = potential_smoothing
@@ -62,11 +60,12 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
 
         potential = make_potential(potential_dict, voltage_dict)
 
+        # Inherit methods from the PositionSolver, EOMSolver and PotentialVisualization classes
         PositionSolver.__init__(self, potential_dict['xlist'] * 1e-6, potential_dict['ylist'] * 1e-6, -potential,
                                 spline_order_x=self.spline_order, spline_order_y=self.spline_order,
                                 smoothing=self.potential_smoothing, include_screening=self.include_screening, screening_length=self.screening_length)
 
-        EOMSolver.__init__(self, self.f0, self.Z0, Ex=self.Ex, Ey=self.Ey, 
+        EOMSolver.__init__(self, Ex=self.Ex, Ey=self.Ey, 
                            Ex_up=self.Ex_up, Ex_down=self.Ex_down, Ey_up=self.Ey_up, Ey_down=self.Ey_down, 
                            curv_xx=self.ddVdx, curv_xy=self.ddVdxdy, curv_yy=self.ddVdy)
 
@@ -308,7 +307,7 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
             return 0.0
 
     def get_electron_positions(self, n_electrons: int, electron_initial_positions: Optional[ArrayLike] = None, verbose: bool = False,
-                                    suppress_warnings: bool = False) -> dict:
+                               suppress_warnings: bool = False) -> dict:
         """This is the main method to calculate the electron positions in an electrostatic potential. This function can be called with a specific initial condition, 
         which can be useful during voltage sweeps, or with the default initial condition as specified in generate_initial_condition.
         
@@ -328,16 +327,22 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         if electron_initial_positions is None:
             electron_initial_positions = self.generate_initial_condition(
                 n_electrons)
+            
+        if (len(electron_initial_positions) // 2 != n_electrons) and (not suppress_warnings):
+            print("WARNING: The initial condition does not match n_electrons. n_electrons is ignored.")
 
         self.CM = self.ConvergenceMonitor(self.Vtotal, self.grad_total, call_every=1, verbose=verbose)
 
-        # NOTE: Need to check about these numbers.
-        gradient_tolerance = 1e-19
-        epsilon = 1e-19
-
+        # Convergence can happen one of two ways
+        # (a) if the gradient self.grad_total(res['x']) < gradient_tolerance
+        # (b) if res['fun'] changes less than the floating point precision from one iteration to the next.
+        gradient_tolerance = 1e-1 # Units are eV/m
+        
+        # For improved performance we use maxls=100. Default is 20, but if starting close to the final solution, sometimes more 
+        # line searches are needed to converge. This is also helpful if the function landscape is very flat.
         trap_minimizer_options = {'method': 'L-BFGS-B',
                                   'jac': self.grad_total,
-                                  'options': {'disp': False, 'gtol': gradient_tolerance, 'eps': epsilon},
+                                  'options': {'disp': False, 'gtol': gradient_tolerance, 'maxls' : 100},
                                   'callback': self.CM.monitor_convergence}
 
         # initial_jacobian = self.grad_total(electron_initial_positions)
@@ -386,7 +391,7 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
                 break
         
         if res['status'] > 0 and not(no_electrons_left) and not(suppress_warnings):
-            print("WARNING: Initial minimization for Trap did not converge!")
+            print("WARNING: Initial minimization did not converge!")
             print(f"Final L-inf norm of gradient = {np.amax(res['jac']):.2f} eV/m")
             best_res = res
             print("Please check your initial condition, are all electrons confined in the simulation area?")
@@ -395,7 +400,7 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
             if verbose:
                 print("SUCCESS: Initial minimization for Trap converged!")
                 # This maps the electron positions within the simulation domain
-                print("Perturbing solution %d times at %.2f K. (dx,dy) ~ (%.3f, %.3f) um..."
+                print("Perturbing solution %d times at %.2f K. (dx,dy) ~ (%.3f, %.3f) µm..."
                        % (len(self.trap_annealing_steps), self.trap_annealing_steps[0],
                           np.mean(self.thermal_kick_x(res['x'][::2], res['x'][1::2], self.trap_annealing_steps[0],
                                                       maximum_dx=self.max_x_displacement)) * 1E6,
@@ -424,7 +429,7 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         
         return best_res
     
-    def plot_electron_positions(self, res: dict, ax=None, color: str='mediumseagreen') -> None:
+    def plot_electron_positions(self, res: dict, ax=None, color: str='mediumseagreen', marker_size: float=10.0) -> None:
         """Plot electron positions obtained from get_electron_positions
 
         Args:
@@ -435,14 +440,100 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         x, y = r2xy(res['x'])
         
         if ax is None: 
-            plt.plot(x*1e6, y*1e6, 'ok', mfc=color, mew=0.5, ms=10, path_effects=[pe.SimplePatchShadow(), pe.Normal()])
+            plt.plot(x*1e6, y*1e6, 'ok', mfc=color, mew=0.5, ms=marker_size, 
+                     path_effects=[pe.SimplePatchShadow(), pe.Normal()])
         else:
-            ax.plot(x*1e6, y*1e6, 'ok', mfc=color, mew=0.5, ms=10, path_effects=[pe.SimplePatchShadow(), pe.Normal()])
+            ax.plot(x*1e6, y*1e6, 'ok', mfc=color, mew=0.5, ms=marker_size, 
+                    path_effects=[pe.SimplePatchShadow(), pe.Normal()])
 
-    def animate_convergence(self, frame_interval_ms: int=10):
+    
+    def animate_voltage_sweep(self, list_of_voltages: list, list_of_electron_positions: list, coor: tuple=(0, 0), dxdy: tuple=(2, 2), frame_interval_ms: int=10) -> matplotlib.animation.FuncAnimation:
+        """
+        Animates a voltage sweep by updating the voltage and electron positions over time. 
+        This function only animates the sweep, it does not calculate the electron positions. This needs to be done beforehand.
+
+        Args:
+            list_of_voltages (list): A list of dictionaries representing the voltages at each frame.
+            list_of_electron_positions (list): A list of arrays representing the electron positions at each frame.
+            coor (tuple, optional): The coordinates of the center of the plot. Defaults to (0, 0).
+            dxdy (tuple, optional): The width and height of the plot. Defaults to (2, 2).
+            frame_interval_ms (int, optional): The time interval between frames in milliseconds. Defaults to 10.
+
+        Returns:
+            matplotlib.animation.FuncAnimation: The animation object.
+
+        Raises:
+            AssertionError: If the length of the voltage list is not the same as the list of electron positions.
+        """
+        assert len(list_of_voltages) == len(list_of_electron_positions), "The length of the voltage list must be the same as the list of electron positions."
+        
+        potential = make_potential(self.potential_dict, list_of_voltages[0])
+        zdata = -potential.T
+
+        fig = plt.figure(figsize=(7,4))
+        ax = fig.add_subplot(111)
+        img_data = ax.imshow(zdata, cmap=plt.cm.RdYlBu_r, extent=[coor[0] - dxdy[0]/2, coor[0] + dxdy[0]/2, 
+                                                                  coor[1] - dxdy[1]/2, coor[1] + dxdy[1]/2])
+        
+        final_x, final_y = r2xy(list_of_electron_positions[0])
+        pts_data = ax.plot(final_x*1e6, final_y*1e6, 'ok', mfc='mediumseagreen', mew=0.5, ms=10, 
+                           path_effects=[pe.SimplePatchShadow(), pe.Normal()])
+
+        cbar = plt.colorbar(img_data)
+        tick_locator = matplotlib.ticker.MaxNLocator(nbins=4)
+        cbar.locator = tick_locator
+        cbar.update_ticks()
+        cbar.ax.set_ylabel(r"Potential energy $-eV(x,y)$")
+
+        xmin, xmax = (coor[0] - dxdy[0]/2, coor[0] + dxdy[0]/2)
+        ymin, ymax = (coor[1] - dxdy[1]/2, coor[1] + dxdy[1]/2)
+        
+        ax.set_xlim(xmin, xmax)
+        ax.set_ylim(ymin, ymax)
+
+        text_boxes = list()
+        initial_voltages = list_of_voltages[0]
+        for k, electrode in enumerate(initial_voltages.keys()):
+            text_boxes.append(ax.text(xmin - 0.75, 
+                                      ymax - k * 0.075 * (ymax - ymin), 
+                                      f"{electrode} = {initial_voltages[electrode]:.2f} V", ha='right', va='top'))
+
+        ax.set_aspect('equal')
+        ax.set_xlabel("$x$"+f" ({chr(956)}m)")
+        ax.set_ylabel("$y$"+f" ({chr(956)}m)")
+        plt.locator_params(axis='both', nbins=4)
+
+        fig.tight_layout()
+                
+        def update(frame):
+            # Update the voltages and electron positions
+            voltages = list_of_voltages[frame]
+            final_x, final_y = r2xy(list_of_electron_positions[frame])
+            
+            potential = make_potential(self.potential_dict, voltages)
+            zdata = -potential.T
+
+            # Update the color plot
+            img_data.set_data(zdata)
+            
+            # Update the electron positions (green dots)
+            pts_data[0].set_xdata(final_x * 1e6)
+            pts_data[0].set_ydata(final_y * 1e6)
+            
+            # Update the voltages to the left of the image
+            for k, electrode in enumerate(voltages.keys()):
+                text_boxes[k].set_text(f"{electrode} = {voltages[electrode]:.2f} V")
+                
+            return (img_data, pts_data, text_boxes)
+
+        return animation.FuncAnimation(fig=fig, func=update, frames=np.arange(len(list_of_voltages)), interval=frame_interval_ms, repeat=True)
+    
+    def animate_convergence(self, coor: tuple=(0, 0), dxdy: tuple=(2, 2), frame_interval_ms: int=10) -> matplotlib.animation.FuncAnimation:
         """Animate the convergence data stored in the convergence helper class. 
 
         Args:
+            coor (tuple, optional): The coordinates of the center of the plot. Defaults to (0, 0).
+            dxdy (tuple, optional): The width and height of the plot. Defaults to (2, 2).
             frame_interval_ms (int, optional): Interval between frames in milliseconds. Defaults to 10.
 
         Returns:
@@ -452,7 +543,7 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         r = self.CM.curr_xk
         
         fig, ax = plt.subplots(1, 1, figsize=(4, 4))
-        self.plot_potential_energy(ax=ax, dxdy=(2, 2), print_voltages=False, plot_contours=False)
+        self.plot_potential_energy(ax=ax, coor=coor, dxdy=dxdy, print_voltages=False, plot_contours=False)
         
         rx, ry = r2xy(r[0, :])
         pts_data = ax.plot(rx*1e6, ry*1e6, 'ok', mfc='mediumseagreen', mew=0.5, ms=10, path_effects=[pe.SimplePatchShadow(), pe.Normal()])

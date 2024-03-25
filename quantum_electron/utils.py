@@ -1,12 +1,19 @@
 import numpy as np
 from numpy.typing import ArrayLike
-from typing import Dict
+from typing import Dict, Optional, List
 import pyvista
 from shapely import Polygon
 import shapely.plotting
 from matplotlib import pyplot as plt
 from scipy.constants import elementary_charge as qe, epsilon_0
 from scipy.constants import Boltzmann as kB
+import matplotlib
+import importlib
+
+def package_versions():
+    for module in ['quantum_electron', 'numpy', 'scipy', 'matplotlib']:
+        globals()[module] = importlib.import_module(module)
+        print(globals()[module].__name__, globals()[module].__version__)
 
 def select_outer_electrons(xi: ArrayLike, yi: ArrayLike, plot: bool=True, **kwargs) -> tuple:
     """Select the outermost electrons from a small ensemble of electrons. This is 
@@ -52,7 +59,6 @@ def select_outer_electrons(xi: ArrayLike, yi: ArrayLike, plot: bool=True, **kwar
     else:
         return None, None
         
-    
 def density_from_positions(xi: ArrayLike, yi: ArrayLike) -> float:
     """Electron density estimate calculated from the nearest neighbor distance
 
@@ -70,10 +76,33 @@ def density_from_positions(xi: ArrayLike, yi: ArrayLike) -> float:
     YiYj = Yi - Yj
 
     Rij_standard = np.sqrt((XiXj) ** 2 + (YiYj) ** 2)
-    np.fill_diagonal(Rij_standard, 5e-6)
+    np.fill_diagonal(Rij_standard, np.inf)
 
     nearest_neighbor_distance = np.min(Rij_standard, axis=1)
-    return 1 / (np.pi * np.mean(nearest_neighbor_distance) ** 2)
+    area = np.pi * np.mean(nearest_neighbor_distance) ** 2 / 4
+    return 1 / area
+
+def mean_electron_spacing(xi: ArrayLike, yi: ArrayLike) -> float:
+    """Mean electron spacing calculated from the nearest neighbor distance
+
+    Args:
+        xi (ArrayLike): electron x-positions np.array([x0, x1, ...])
+        yi (ArrayLike): electron y-positions np.array([y0, y1, ...])
+
+    Returns:
+        float: Mean electron spacing in units of m
+    """
+    Xi, Yi = np.meshgrid(xi, yi)
+    Xj, Yj = Xi.T, Yi.T
+
+    XiXj = Xi - Xj
+    YiYj = Yi - Yj
+
+    Rij_standard = np.sqrt((XiXj) ** 2 + (YiYj) ** 2)
+    np.fill_diagonal(Rij_standard, np.inf)
+
+    nearest_neighbor_distance = np.min(Rij_standard, axis=1)
+    return np.mean(nearest_neighbor_distance)
 
 def gamma_parameter(xi: ArrayLike, yi: ArrayLike, T: float) -> float:
     """Ratio of the Coulomb energy to kinetic energy. For bulk electrons on helium 
@@ -137,6 +166,51 @@ def xy2r(x: ArrayLike, y: ArrayLike) -> ArrayLike:
     else:
         raise ValueError("x and y must have the same length!")
     
+def make_potential(potential_dict: Dict[str, ArrayLike], voltages: Dict[str, float]) -> ArrayLike:
+    """Creates a numpy array potential based on an array of coupling coefficient arrays stored in potential_dict. 
+    The returned potential values are positive for a positive voltage applied to the gate. Therefore, to transform
+    the potential into potential energy, multiply with -1.
+
+    Args:
+        potential_dict (Dict[str, ArrayLike]): Dictionary containing at least the keys also present in the voltages dictionary.
+        The 2d-array associated with each key contains the coupling coefficient for the respective electrode in space.
+        voltages (Dict[str, float]): Dictionary with electrode names as keys. The value associated with each key is the voltage
+        applied to each electrode
+
+    Returns:
+        ArrayLike: Inner product of the coupling coefficient arrays and the voltages. 
+    """
+
+    for k, key in enumerate(list(voltages.keys())):
+        if k == 0: 
+            potential = potential_dict[key] * voltages[key] 
+        else:
+            potential += potential_dict[key] * voltages[key]
+    
+    return potential
+
+def find_minimum_location(potential_dict: Dict[str, ArrayLike], voltages: Dict[str, float], return_potential_value: bool=False) -> tuple[float, float]:
+    """Find the coordinates of the minimum energy point for a single electron.
+
+    Args:
+        potential_dict (Dict[str, ArrayLike]): Potential dictionary.
+        voltages (Dict[str, float]): Voltage dictionary.
+        return_potential_value (bool): Returns the value of the potential energy for a single electron at the minimum location.
+
+    Returns:
+        tuple[float, float]: (x_min, y_min, V_min) where the potential energy for a single electron is minimized. Units are in micron, eV.
+    """
+    
+    potential = make_potential(potential_dict, voltages)
+    zdata = -potential.T
+    
+    xidx, yidx = np.unravel_index(zdata.argmin(), zdata.shape)
+    
+    if return_potential_value:
+        return potential_dict['xlist'][yidx], potential_dict['ylist'][xidx], zdata[xidx, yidx]
+    else:
+        return potential_dict['xlist'][yidx], potential_dict['ylist'][xidx]
+
 def crop_potential(x: ArrayLike, y: ArrayLike, U: ArrayLike, xrange: tuple, yrange: tuple) -> tuple:
     """Crops the potential to the boundaries specified by xrange and yrange. 
 
@@ -154,3 +228,65 @@ def crop_potential(x: ArrayLike, y: ArrayLike, U: ArrayLike, xrange: tuple, yran
     ymin_idx, ymax_idx = find_nearest(y, yrange[0]), find_nearest(y, yrange[1])
 
     return x[xmin_idx:xmax_idx], y[ymin_idx:ymax_idx], U[xmin_idx:xmax_idx, ymin_idx:ymax_idx]
+
+class PotentialVisualization:
+    def __init__(self, potential_dict: Dict[str, ArrayLike], voltages: Dict[str, float]):
+        self.potential_dict = potential_dict
+        self.voltage_dict = voltages    
+
+    def plot_potential_energy(self, ax=None, coor: Optional[List[float]]=[0,0], dxdy: List[float]=[1, 2], figsize: tuple[float, float]=(7, 4), 
+                              print_voltages: bool=True,  plot_contours: bool=True) -> None:
+        """Plot the potential energy as function of (x,y)
+
+        Args:
+            coor (List[float, float], optional): Center of the solution window (in microns), this should include the potential minimum. Defaults to [0,0].
+            dxdy (List[float, float], optional): width of the solution window for x and y (measured in microns). Defaults to [1, 2].
+            figsize (tuple[float, float], optional): Figure size that gets passed to matplotlib.pyplot.figure. Defaults to (7, 4).
+        """
+
+        potential = make_potential(self.potential_dict, self.voltage_dict)
+        zdata = -potential.T
+
+        if ax is None:
+            fig = plt.figure(figsize=figsize)
+            ax = fig.add_subplot(111)
+            make_colorbar = True
+        else:
+            make_colorbar = False
+            
+        pcm = ax.pcolormesh(self.potential_dict['xlist'], self.potential_dict['ylist'], zdata, cmap=plt.cm.RdYlBu_r)
+        
+        if make_colorbar:
+            cbar = plt.colorbar(pcm)
+            tick_locator = matplotlib.ticker.MaxNLocator(nbins=4)
+            cbar.locator = tick_locator
+            cbar.update_ticks()
+            cbar.ax.set_ylabel(r"Potential energy $-eV(x,y)$")
+        
+        xidx, yidx = np.unravel_index(zdata.argmin(), zdata.shape)
+        ax.plot(self.potential_dict['xlist'][yidx], self.potential_dict['ylist'][xidx], '*', color='white')
+
+        ax.set_xlim(coor[0] - dxdy[0]/2, coor[0] + dxdy[0]/2)
+        ax.set_ylim(coor[1] - dxdy[1]/2, coor[1] + dxdy[1]/2)
+
+        ax.set_aspect('equal')
+        
+        if print_voltages:
+            for k, electrode in enumerate(self.voltage_dict.keys()):
+                xmin, xmax = ax.get_xlim()
+                ymin, ymax = ax.get_ylim()
+
+                ax.text(coor[0] - dxdy[0]/2 - 0.3 * (xmax - xmin), coor[1] + dxdy[1]/2 - k * 0.1 * (ymax - ymin), 
+                        f"{electrode} = {self.voltage_dict[electrode]:.2f} V", ha='right', va='top')
+
+        if plot_contours:
+            contours = [np.round(np.min(zdata), 3) +k*1e-3 for k in range(5)]
+            CS = ax.contour(self.potential_dict['xlist'], self.potential_dict['ylist'], zdata, levels=contours)
+            ax.clabel(CS, CS.levels, inline=True, fontsize=10)
+
+        ax.set_xlabel("$x$"+f" ({chr(956)}m)")
+        ax.set_ylabel("$y$"+f" ({chr(956)}m)")
+        ax.locator_params(axis='both', nbins=4)
+        
+        if ax is None:
+            plt.tight_layout()

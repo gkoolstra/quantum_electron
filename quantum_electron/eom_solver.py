@@ -10,22 +10,17 @@ from matplotlib import patheffects as pe
 from IPython import display 
 
 class EOMSolver:
-    def __init__(self, f0: float, Z0: float, Ex: callable, Ey: callable, Ex_up: callable, Ex_down: callable, Ey_up: callable, Ey_down: callable, 
+    def __init__(self, Ex: callable, Ey: callable, Ex_up: callable, Ex_down: callable, Ey_up: callable, Ey_down: callable, 
                  curv_xx: callable, curv_xy: callable, curv_yy: callable) -> None:
         """Class that sets up the equations of motion in matrix form and solves them.
 
         Args:
-            f0 (float): Resonance frequency of the RF-mode that primarily couples to the electron mode.
-            Z0 (float): Impedance of the RF-mode.
             Ex (callable): Electric field in the x-direction. This function is inherited from the FullModel class.
             Ey (callable): Electric field in the y-direction. This function is inherited from the FullModel class.
             curv_xx (callable): Second derivative of the electrostatic potential:  d^2 / dx^2 V. This function is inherited from the PositionSolver class.
             curv_xy (callable): Second derivative of the electrostatic potential:  d^2 / dx dy V. This function is inherited from the PositionSolver class.
             curv_yy (callable): Second derivative of the electrostatic potential:  d^2 / dy^2 V. This function is inherited from the PositionSolver class.
         """
-        self.f0 = f0
-        self.Z0 = Z0
-            
         # Electric field functions for the simple single-mode LC circuit    
         self.Ex = Ex
         self.Ey = Ey
@@ -42,9 +37,18 @@ class EOMSolver:
     
     def setup_eom_coupled_lc(self, ri: ArrayLike, resonator_dict: Dict) -> tuple[ArrayLike]:
         """
-        Set up the Matrix used for determining the electron motional frequencies.
-        :param electron_positions: Electron positions, in the form [x0, y0, x1, y1, ...]
-        :return: M^(-1) * K
+        Set up the Matrix used for determining the electron motional frequencies and cavity frequency.
+        This function is used for the coupled LC resonator model. The electrons are located in between the plates of the 
+        capacitor Cdot.
+
+        Args:
+            ri (ArrayLike): Electron positions, in the form [x0, y0, x1, y1, ...]
+            resonator_dict (Dict): Dictionary containing the parameters of the resonator. Must have L1, L2, C1, C2, Cdot, mode.
+            Here L1, C1 are the inductance and capacitance of the first resonator, L2, C2 are the inductance and capacitance of the second resonator.
+            Cdot is the coupling capacitance between the two resonators. The mode key sets the f0 parameter and is used in get_cavity_frequency_shift.
+
+        Returns:
+            tuple[ArrayLike]: kinetic matrix K, and mass matrix M
         """
         C1 = resonator_dict['C1']
         C2 = resonator_dict['C2']
@@ -57,9 +61,11 @@ class EOMSolver:
         # We first solve the cavity equations without electrons to identify the common and differential modes
         D = C1 * C2 + C1 * Cdot + C2 * Cdot
 
+        # Mass matrix of the cavity only
         M = np.array([[L1, 0], 
                       [0, L2]])
 
+        # Kinetic matrix of the cavity only
         K = np.array([[(C2 + Cdot) / D, Cdot / D], 
                       [Cdot / D, (C1 + Cdot) / D]])
 
@@ -101,14 +107,9 @@ class EOMSolver:
         kij_plus = np.zeros((num_electrons, num_electrons))
         kij_minus = np.zeros((num_electrons, num_electrons))
         lij = np.zeros((num_electrons, num_electrons))
-
-        # Xi, Yi = np.meshgrid(xe, ye)
-        # Xj, Yj = Xi.T, Yi.T
-        # XiXj = Xi - Xj
-        # YiYj = Yi - Yj
-        # rij = np.sqrt((XiXj) ** 2 + (YiYj) ** 2)
         
         # Use calculate metrics from eom_solver to take into account periodic boundary conditions
+        # This method is inherited from the PositionSolver class
         XiXj, YiYj, rij = self.calculate_metrics(xe, ye) 
         
         np.fill_diagonal(XiXj, 1E-15)
@@ -142,7 +143,6 @@ class EOMSolver:
         np.fill_diagonal(kij_minus, 0)
         np.fill_diagonal(lij, 0)
 
-        # Note: not sure where the factor 2 comes from
         Kij_plus = -kij_plus + np.diag(q_e*self.curv_xx(xe, ye) + np.sum(kij_plus, axis=1))
         Kij_minus = -kij_minus + np.diag(q_e*self.curv_yy(xe, ye) + np.sum(kij_minus, axis=1))
         Lij = -lij + np.diag(q_e*self.curv_xy(xe, ye) + np.sum(lij, axis=1))
@@ -154,14 +154,24 @@ class EOMSolver:
 
         return K, M
     
-    def setup_eom(self, ri: ArrayLike, periodic_boundaries=[]) -> tuple[ArrayLike]:
+    def setup_eom(self, ri: ArrayLike, resonator_dict: Dict) -> tuple[ArrayLike]:
+        """Set up the Matrix used for determining the electron motional frequencies and cavity frequency.
+        This function is used for a simple LC resonator model. The electrons are located in between the 
+        plates of the capacitor C. 
+
+        Args:
+            ri (ArrayLike): Electron positions, in the form [x0, y0, x1, y1, ...]
+            resonator_dict (Dict): Dictionary containing the parameters of the resonator. Must have f0, Z0 as keys.
+            f0 is the frequency of the resonator, and Z0 is the impedance of the resonator.
+
+        Returns:
+            tuple[ArrayLike]: kinetic matrix K, and mass matrix M
         """
-        Set up the Matrix used for determining the electron frequency.
-        :param electron_positions: Electron positions, in the form [x0, y0, x1, y1, ...]
-        :return: M^(-1) * K
-        """
+        # Instantiate this for use in get_cavity_frequency_shift
+        self.f0 = resonator_dict['f0']
+
         omega0 = 2 * np.pi * self.f0
-        L = self.Z0 / omega0
+        L = resonator_dict['Z0'] / omega0
         C = 1 / (omega0**2 * L)
         self.num_cavity_modes = 1
 
@@ -188,14 +198,9 @@ class EOMSolver:
         lij = np.zeros((num_electrons, num_electrons))
 
         # Use calculate metrics from eom_solver to take into account periodic boundary conditions
+        # This method is inherited from the PositionSolver class
         XiXj, YiYj, rij = self.calculate_metrics(xe, ye)        
-        
-        # Xi, Yi = np.meshgrid(xe, ye)
-        # Xj, Yj = Xi.T, Yi.T
-        # XiXj = Xi - Xj
-        # YiYj = Yi - Yj
-        # rij = np.sqrt((XiXj) ** 2 + (YiYj) ** 2)
-        
+              
         # Set Xi - Xi to a finite value to avoid dividing by zero.
         np.fill_diagonal(XiXj, 1E-15)
         tij = np.arctan(YiYj / XiXj)
@@ -209,9 +214,9 @@ class EOMSolver:
             # print("Coulomb!")
             # Note that an infinite screening length corresponds to the Coulomb case. Usually it should be twice the
             # helium depth
-            kij_plus = 1 / 4. * q_e ** 2 / (4 * np.pi * eps0) * (1 + 3 * np.cos(2 * tij)) / rij ** 3
-            kij_minus = 1 / 4. * q_e ** 2 / (4 * np.pi * eps0) * (1 - 3 * np.cos(2 * tij)) / rij ** 3
-            lij = 1 / 4. * q_e ** 2 / (4 * np.pi * eps0) * 3 * np.sin(2 * tij) / rij ** 3
+            kij_plus = 1 / 2. * q_e ** 2 / (4 * np.pi * eps0) * (1 + 3 * np.cos(2 * tij)) / rij ** 3
+            kij_minus = 1 / 2. * q_e ** 2 / (4 * np.pi * eps0) * (1 - 3 * np.cos(2 * tij)) / rij ** 3
+            lij = 1 / 2. * q_e ** 2 / (4 * np.pi * eps0) * 3 * np.sin(2 * tij) / rij ** 3
         else:
             # print("Yukawa!")
             rij_scaled = rij / self.screening_length
@@ -228,10 +233,9 @@ class EOMSolver:
         np.fill_diagonal(kij_minus, 0)
         np.fill_diagonal(lij, 0)
 
-        # Note: not sure where the factor 2 comes from
-        Kij_plus = -kij_plus + np.diag(q_e*self.curv_xx(xe, ye) + np.sum(kij_plus, axis=1))
-        Kij_minus = -kij_minus + np.diag(q_e*self.curv_yy(xe, ye) + np.sum(kij_minus, axis=1))
-        Lij = -lij + np.diag(q_e*self.curv_xy(xe, ye) + np.sum(lij, axis=1))
+        Kij_plus = -kij_plus + np.diag(q_e * self.curv_xx(xe, ye) + np.sum(kij_plus, axis=1))
+        Kij_minus = -kij_minus + np.diag(q_e * self.curv_yy(xe, ye) + np.sum(kij_minus, axis=1))
+        Lij = -lij + np.diag(q_e * self.curv_xy(xe, ye) + np.sum(lij, axis=1))
 
         K[1:num_electrons+1,1:num_electrons+1] = Kij_plus
         K[num_electrons+1:2*num_electrons+1, num_electrons+1:2*num_electrons+1] = Kij_minus
@@ -240,7 +244,7 @@ class EOMSolver:
 
         return K, M
 
-    def solve_eom(self, LHS: ArrayLike, RHS: ArrayLike, sort_by_cavity_participation: bool=True, cavity_mode_index: int=0) -> tuple[ArrayLike]:
+    def solve_eom(self, LHS: ArrayLike, RHS: ArrayLike, filter_nan: bool=False, sort_by_cavity_participation: bool=True, cavity_mode_index: int=0) -> tuple[ArrayLike]:
         """Solves the eigenvalues and eigenvectors for the system of equations constructed with setup_eom()
         The order of eigenvalues, and order of the columns of EVecs is coupled. By default scipy sorts this from low eigenvalue to high eigenvalue, however, 
         by flagging sort_by_cavity_participation, this function will return the eigenvalues and vectors sorted by largest cavity contribution first.
@@ -265,6 +269,11 @@ class EOMSolver:
             # Only the columns are ordered, the rows (electrons) are not shuffled. Keep the Evals and Evecs order consistent.
             EVecs = EVecs[:, sorted_order]
             EVals = EVals[sorted_order]
+
+        if filter_nan:
+            # Filter out NaNs
+            EVecs = EVecs[:, EVals > 0]
+            EVals = EVals[EVals > 0]
         
         return np.sqrt(EVals) / (2 * np.pi), EVecs
     
@@ -306,7 +315,7 @@ class EOMSolver:
             plt.arrow(e_x[e_idx] * 1e6, e_y[e_idx] * 1e6, dx=dxs[e_idx], dy=dys[e_idx], width=width, head_length=1.5*3 *width, head_width=3.5*width, 
                     edgecolor='k', lw=0.4, facecolor=color)
     
-    def animate_eigenvectors(self, fig, axs_list: list, eigenvector_list: List[ArrayLike], electron_positions: ArrayLike, 
+    def animate_eigenvectors(self, fig, axs_list: list, eigenvector_list: List[ArrayLike], electron_positions: ArrayLike, marker_size: float=10, 
                              amplitude: float=0.5e-6, time_points: int=31, frame_interval_ms: int=10):
         """Make a matplotlib animation object for saving as a gif, or for displaying in a notebook.
         For use in displaying only:
@@ -339,7 +348,7 @@ class EOMSolver:
 
         all_points = list()
         for ax in axs_list:
-            pts_data = ax.plot(e_x*1e6, e_y*1e6, 'ok', mfc='mediumseagreen', mew=0.5, ms=10, path_effects=[pe.SimplePatchShadow(), pe.Normal()])
+            pts_data = ax.plot(e_x*1e6, e_y*1e6, 'ok', mfc='mediumseagreen', mew=0.5, ms=marker_size, path_effects=[pe.SimplePatchShadow(), pe.Normal()])
             all_points.append(pts_data)
 
         # Only things in the update function will get updated.

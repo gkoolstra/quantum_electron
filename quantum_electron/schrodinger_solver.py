@@ -2,11 +2,9 @@ import scipy
 import numpy as np
 import matplotlib
 from matplotlib import pyplot as plt
-from .utils import construct_symmetric_y
+from .utils import construct_symmetric_y, make_potential, find_minimum_location, PotentialVisualization
 from scipy import sparse
 from scipy.sparse.linalg import eigsh
-from numpy import pi, linspace, cos, sin, ones, transpose, reshape, array, argsort, sort, \
-    meshgrid, amax, amin, dot, sqrt, exp, tanh, sign, argmax
 from numpy.linalg import eig
 from scipy.constants import hbar, m_e, elementary_charge as q_e
 from typing import Dict, List, Optional
@@ -31,7 +29,7 @@ class Schrodinger:
         """normalizes a vector
             @param vec vector to normalize
         """
-        return vec / sqrt(dot(vec, vec))
+        return vec / np.sqrt(np.dot(vec, vec))
 
     @staticmethod
     def Dmat(numpts, delta=1):
@@ -39,11 +37,11 @@ class Schrodinger:
             @param numpts dimension of derivative matrix
             @param delta optional scaling of point spacing
         """
-        a = 0.5 / delta * ones(numpts)
+        a = 0.5 / delta * np.ones(numpts)
         a[0] = 0
         a[-2] = 0
         #b=-2./delta**2*ones(numpts); b[0]=0;b[-1]=0
-        c = -0.5 / delta * ones(numpts)
+        c = -0.5 / delta * np.ones(numpts)
         c[1] = 0
         c[-1] = 0
         return sparse.spdiags([a, c], [-1, 1], numpts, numpts)
@@ -57,15 +55,15 @@ class Schrodinger:
             @param q is a quasimomentum between -pi and pi, which is used if periodic=True
         """
 
-        a = 1. / delta ** 2 * ones(numpts)
-        b = -2. / delta ** 2 * ones(numpts)
-        c = 1. / delta ** 2 * ones(numpts)
+        a = 1. / delta ** 2 * np.ones(numpts)
+        b = -2. / delta ** 2 * np.ones(numpts)
+        c = 1. / delta ** 2 * np.ones(numpts)
         #print "delta = %f" % (delta)
         if periodic:
             if q == 0:
                 return sparse.spdiags([c, a, b, c, c], [-numpts + 1, -1, 0, 1, numpts - 1], numpts, numpts)
             else:
-                return sparse.spdiags([exp(-(0. + 1.j) * q) * c, a, b, c, exp((0. + 1.j) * q) * c],
+                return sparse.spdiags([np.exp(-(0. + 1.j) * q) * c, a, b, c, np.exp((0. + 1.j) * q) * c],
                                       [-numpts + 1, -1, 0, 1, numpts - 1], numpts, numpts)
         else:
             return sparse.spdiags([a, b, c], [-1, 0, 1], numpts, numpts)
@@ -83,8 +81,8 @@ class Schrodinger:
             en, ev = eig(Hmat.todense())
         else:
             en, ev = eigsh(Hmat, **self.sparse_args)
-        ev = transpose(array(ev))[argsort(en)]
-        en = sort(en)
+        ev = np.transpose(np.array(ev))[np.argsort(en)]
+        en = np.sort(en)
         self.en = en
         self.ev = ev
         self.solved = True
@@ -107,10 +105,10 @@ class Schrodinger:
         """
         if not self.solved: self.solve()
         if sparse.issparse(operator):
-            return array([array([dot(psi1, operator.dot(psi2)) for psi2 in self.psis(num_levels)]) for psi1 in
+            return np.array([np.array([np.dot(psi1, operator.dot(psi2)) for psi2 in self.psis(num_levels)]) for psi1 in
                           self.psis(num_levels)])
         else:
-            return array([array([dot(psi1, dot(operator, psi2)) for psi2 in self.psis(num_levels)]) for psi1 in
+            return np.array([np.array([np.dot(psi1, np.dot(operator, psi2)) for psi2 in self.psis(num_levels)]) for psi1 in
                           self.psis(num_levels)])
             
 class Schrodinger2D(Schrodinger):
@@ -151,7 +149,7 @@ class Schrodinger2D(Schrodinger):
     def get_2Dpsis(self, num_levels=-1):
         psis = []
         for psi in self.psis(num_levels):
-            psis.append(reshape(psi, (len(self.y), len(self.x))))
+            psis.append(np.reshape(psi, (len(self.y), len(self.x))))
         return psis
 
     def plot(self, num_levels=10):
@@ -206,113 +204,6 @@ class SingleElectron(Schrodinger2D):
                             'which': 'LM',  # ‘LM’ : Largest (in magnitude) eigenvalues
                             'sigma': np.min(self.U),  # 'sigma' : Find eigenvalues near sigma using shift-invert mode.
                             'maxiter': None}  # Maximum number of Arnoldi update iterations allowed Default: n*10
-
-class PotentialVisualization:
-    def __init__(self, potential_dict: Dict[str, ArrayLike], voltages: Dict[str, float]):
-        self.potential_dict = potential_dict
-        self.voltage_dict = voltages    
-
-    def plot_potential_energy(self, ax=None, coor: Optional[List[float]]=[0,0], dxdy: List[float]=[1, 2], figsize: tuple[float, float]=(7, 4), 
-                              print_voltages: bool=True,  plot_contours: bool=True) -> None:
-        """Plot the potential energy as function of (x,y)
-
-        Args:
-            coor (List[float, float], optional): Center of the solution window (in microns), this should include the potential minimum. Defaults to [0,0].
-            dxdy (List[float, float], optional): width of the solution window for x and y (measured in microns). Defaults to [1, 2].
-            figsize (tuple[float, float], optional): Figure size that gets passed to matplotlib.pyplot.figure. Defaults to (7, 4).
-        """
-
-        potential = make_potential(self.potential_dict, self.voltage_dict)
-        zdata = -potential.T
-
-        if ax is None:
-            fig = plt.figure(figsize=figsize)
-            ax = fig.add_subplot(111)
-            make_colorbar = True
-        else:
-            make_colorbar = False
-            
-        pcm = ax.pcolormesh(self.potential_dict['xlist'], self.potential_dict['ylist'], zdata, cmap=plt.cm.RdYlBu_r)
-        
-        if make_colorbar:
-            cbar = plt.colorbar(pcm)
-            tick_locator = matplotlib.ticker.MaxNLocator(nbins=4)
-            cbar.locator = tick_locator
-            cbar.update_ticks()
-            cbar.ax.set_ylabel(r"Potential energy $-eV(x,y)$")
-        
-        xidx, yidx = np.unravel_index(zdata.argmin(), zdata.shape)
-        ax.plot(self.potential_dict['xlist'][yidx], self.potential_dict['ylist'][xidx], '*', color='white')
-
-        ax.set_xlim(coor[0] - dxdy[0]/2, coor[0] + dxdy[0]/2)
-        ax.set_ylim(coor[1] - dxdy[1]/2, coor[1] + dxdy[1]/2)
-
-        ax.set_aspect('equal')
-        
-        if print_voltages:
-            for k, electrode in enumerate(self.voltage_dict.keys()):
-                xmin, xmax = ax.get_xlim()
-                ymin, ymax = ax.get_ylim()
-
-                ax.text(coor[0] - dxdy[0]/2 - 0.3 * (xmax - xmin), coor[1] + dxdy[1]/2 - k * 0.1 * (ymax - ymin), 
-                        f"{electrode} = {self.voltage_dict[electrode]:.2f} V", ha='right', va='top')
-
-        if plot_contours:
-            contours = [np.round(np.min(zdata), 3) +k*1e-3 for k in range(5)]
-            CS = ax.contour(self.potential_dict['xlist'], self.potential_dict['ylist'], zdata, levels=contours)
-            ax.clabel(CS, CS.levels, inline=True, fontsize=10)
-
-        ax.set_xlabel("$x$"+f" ({chr(956)}m)")
-        ax.set_ylabel("$y$"+f" ({chr(956)}m)")
-        ax.locator_params(axis='both', nbins=4)
-        
-        if ax is None:
-            plt.tight_layout()
-
-def make_potential(potential_dict: Dict[str, ArrayLike], voltages: Dict[str, float]) -> ArrayLike:
-    """Creates a numpy array potential based on an array of coupling coefficient arrays stored in potential_dict. 
-    The returned potential values are positive for a positive voltage applied to the gate. Therefore, to transform
-    the potential into potential energy, multiply with -1.
-
-    Args:
-        potential_dict (Dict[str, ArrayLike]): Dictionary containing at least the keys also present in the voltages dictionary.
-        The 2d-array associated with each key contains the coupling coefficient for the respective electrode in space.
-        voltages (Dict[str, float]): Dictionary with electrode names as keys. The value associated with each key is the voltage
-        applied to each electrode
-
-    Returns:
-        ArrayLike: Inner product of the coupling coefficient arrays and the voltages. 
-    """
-
-    for k, key in enumerate(list(voltages.keys())):
-        if k == 0: 
-            potential = potential_dict[key] * voltages[key] 
-        else:
-            potential += potential_dict[key] * voltages[key]
-    
-    return potential
-
-def find_minimum_location(potential_dict: Dict[str, ArrayLike], voltages: Dict[str, float], return_potential_value: bool=False) -> tuple[float, float]:
-    """Find the coordinates of the minimum energy point for a single electron.
-
-    Args:
-        potential_dict (Dict[str, ArrayLike]): Potential dictionary.
-        voltages (Dict[str, float]): Voltage dictionary.
-        return_potential_value (bool): Returns the value of the potential energy for a single electron at the minimum location.
-
-    Returns:
-        tuple[float, float]: (x_min, y_min, V_min) where the potential energy for a single electron is minimized. Units are in micron, eV.
-    """
-    
-    potential = make_potential(potential_dict, voltages)
-    zdata = -potential.T
-    
-    xidx, yidx = np.unravel_index(zdata.argmin(), zdata.shape)
-    
-    if return_potential_value:
-        return potential_dict['xlist'][yidx], potential_dict['ylist'][xidx], zdata[xidx, yidx]
-    else:
-        return potential_dict['xlist'][yidx], potential_dict['ylist'][xidx]
 
 class QuantumAnalysis(PotentialVisualization): 
     """This class solves the Schrodinger equation for a single electron on helium. Typical workflow: 
