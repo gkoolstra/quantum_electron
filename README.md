@@ -1,13 +1,18 @@
 ![example workflow](https://github.com/gkoolstra/quantum_electron/actions/workflows/python-app.yml/badge.svg)
-# Quantum electron solver
-This package has two main functions
-1. It can simulate electron positions in a two dimensional plane for electrons confined in an electrostatic potential $\phi$. Electron-electron interactions are also taken into account. Physically, it minimizes the total energy of an $N$-electron system, which is given by: $$
--e\sum_i \phi(\mathbf{r}_i) + \sum_{i<j} \frac{e^2}{4\pi \epsilon_0}\frac{1}{|\mathbf{r}_i - \mathbf{r}_j|}$$ The minimization of this energy is carried out by the `scipy.optimize.minimize` library. Additionally, this module guarantees proper convergence because the force (gradients of the energy) is supplied as an argument of the minimizer. Currently the minimizer can handle problems up to $N \approx 400$ electrons in less than 1 minute on a laptop computer. Note that the temperature of the system is assumed to be 0K, i.e. there are no kinetic energy terms.
-2. The second part is dedicated to calculating properties of electron motional modes. This is useful in two cases: (a) in few elecron systems $N < 10$ the electron motional states can be used for quantum computation, and this module can help to determine eigenfrequencies and eigenvectors of such electron clusters (b) in the large $N$ limit the electron motional modes are also known as plasmons. There is an abundance of literature about these charge density waves, and many of the properties can be reproduced with this module.
-
-After installation, it is advised to take a look at the `examples` folder to explore some of the functionalities of this module. 
-
+# Quantum Electron Solver
 ![image info](./images/electron_results.png)
+## Main use cases
+This package has two main functions
+1. It simulates electron positions in a two dimensional plane for electrons confined in an electrostatic potential $\phi$. Electron-electron interactions are also taken into account. Physically, it minimizes the total energy of an $N$-electron system, which is given by: $
+-e\sum_i \phi(\mathbf{r}_i) + \sum_{i<j} \frac{e^2}{4\pi \epsilon_0} \frac{1}{|\mathbf{r}_i - \mathbf{r}_j|}$. 
+2. It calculates properties of in-plane electron modes. This is useful in two cases: (a) the electron motional states can be used for quantum computation, and this package can help to determine eigenfrequencies and eigenvectors of electron clusters (b) in the large $N$ limit the electron motional modes are also known as plasmons. There is an abundance of literature about these charge density waves, and many of the properties can be reproduced with this module.
+
+### Features
+- Robust operation through the use of the `scipy.optimize.minimize` library. We assure proper and fast convergence because the force (gradient of the energy) is supplied as an argument of the minimizer.
+- Supply arbitrary potential energies $\phi$, as long as they're on a rectangular grid. 
+- Handles problems up to $N \approx 400$ electrons in less than 1 minute on a laptop computer. 
+- Periodic boundary condition support for systems with open boundaries.
+- Seemless integration with finite element modeling software ZeroHeliumKit.
 
 ## Installation
 
@@ -21,6 +26,7 @@ In a terminal window, change into the cloned directory:
 cd quantum_electron
 pip install -e .
 ```
+After installation, it is advised to take a look at the `examples` folder to explore some of the functionalities of this module. 
 
 ### Additional packages
 To generate animations, this module relies on `ffmpeg`. On MacOS this can be easily installed using [homebrew](https://formulae.brew.sh/formula/ffmpeg) from the Terminal. On Windows it can be installed using the following [link](https://www.ffmpeg.org/download.html). 
@@ -78,4 +84,4 @@ If you found this module useful in your research, please consider citing this co
 - [ ] Write documentation for example notebook 03
 - [ ] Find a place for the code in example notebook 04.
 - [ ] Split off the Schrodinger solver?
-- [ ] Add some documentation to the library folder
+- [ ] Performance metrics
