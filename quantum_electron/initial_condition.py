@@ -5,6 +5,7 @@ from numpy.typing import ArrayLike
 
 micron = 1e-6
 
+
 class InitialCondition:
     """
     Class to generate initial conditions for a given potential energy landscape.
@@ -29,7 +30,7 @@ class InitialCondition:
         self.potential_dict = potential_dict
         self.voltage_dict = voltage_dict
 
-    def make_by_chemical_potential(self, max_electrons: int, chemical_potential: float, min_spacing: float=0.1) -> ArrayLike:
+    def make_by_chemical_potential(self, max_electrons: int, chemical_potential: float, min_spacing: float = 0.1) -> ArrayLike:
         """Makes an initial condition for a given chemical potential. The initial condition is a set of random points with a minimum 
         spacing. The number of points is determined by the chemical potential and the potential energy landscape.
         The algorithm will try to fill the dot with electrons until it reaches the desired number of electrons: max_electrons.
@@ -46,12 +47,13 @@ class InitialCondition:
         z = -make_potential(self.potential_dict, self.voltage_dict)
         dot = (z < chemical_potential) * z
         bounds, dot_min, dot_max = self._dot_area(dot)
-        points = self._generate_points(max_electrons, bounds, dot, dot_min, dot_max, epsilon=min_spacing) * micron
+        points = self._generate_points(
+            max_electrons, bounds, dot, dot_min, dot_max, epsilon=min_spacing) * micron
         init_condition = xy2r(points[:, 0], points[:, 1])
 
         return init_condition
 
-    def make_circular(self, n_electrons: int, coor: Optional[tuple]=None, min_spacing: float=0.1) -> ArrayLike:
+    def make_circular(self, n_electrons: int, coor: Optional[tuple] = None, min_spacing: float = 0.1) -> ArrayLike:
         """Generates an array with electron coordinates in a circular pattern.
 
         Args:
@@ -61,22 +63,23 @@ class InitialCondition:
 
         Returns:
             ArrayLike: array of electron positions in the order np.array([x0, y0, x1, y1, x2, y2, ... , xN, yN])
-        """        
+        """
         if coor is None:
-            coor = find_minimum_location(self.potential_dict, self.voltage_dict)
+            coor = find_minimum_location(
+                self.potential_dict, self.voltage_dict)
 
         radius = min_spacing * micron * n_electrons / (2 * np.pi)
         # Generate initial guess positions for the electrons in a circle with certain radius.
         init_trap_x = np.array([coor[0] * 1e-6 + radius * np.cos(2 *
-                            np.pi * n / float(n_electrons)) for n in range(n_electrons)])
+                                                                 np.pi * n / float(n_electrons)) for n in range(n_electrons)])
         init_trap_y = np.array([coor[1] * 1e-6 + radius * np.sin(2 *
-                            np.pi * n / float(n_electrons)) for n in range(n_electrons)])
+                                                                 np.pi * n / float(n_electrons)) for n in range(n_electrons)])
 
         init_condition = xy2r(np.array(init_trap_x), np.array(init_trap_y))
 
         return init_condition
 
-    def make_rectangular(self, n_electrons: int, coor: tuple=(0, 0), dxdy: tuple=(2, 2), n_rows: int=2) -> ArrayLike:
+    def make_rectangular(self, n_electrons: int, coor: tuple = (0, 0), dxdy: tuple = (2, 2), n_rows: int = 2) -> ArrayLike:
         """Generates an array with electron coordinates in a rectangular pattern.
 
         Args:
@@ -94,8 +97,10 @@ class InitialCondition:
         ymin = coor[1] - dxdy[1] / 2
         ymax = coor[1] + dxdy[1] / 2
 
-        init_x = np.tile(np.linspace(xmin, xmax, n_electrons // n_rows), n_rows) * micron
-        init_y = np.repeat(np.linspace(ymin, ymax, n_rows), n_electrons // n_rows) * micron
+        init_x = np.tile(np.linspace(
+            xmin, xmax, n_electrons // n_rows), n_rows) * micron
+        init_y = np.repeat(np.linspace(ymin, ymax, n_rows),
+                           n_electrons // n_rows) * micron
         init_condition = xy2r(init_x, init_y)
 
         return init_condition
@@ -116,7 +121,7 @@ class InitialCondition:
         trial_points.append(additional_point)
         x = [p[0] for p in trial_points]
         y = [p[1] for p in trial_points]
-        X, Y = np.meshgrid(x,y)
+        X, Y = np.meshgrid(x, y)
 
         R = np.sqrt((X - X.T)**2 + (Y - Y.T)**2)
         np.fill_diagonal(R, 100)
@@ -141,8 +146,8 @@ class InitialCondition:
         for yi in range(len(dot[0, :])):
             empty_row = True
             for xi in dot[:, yi]:
-                if xi>0:
-                    empty_row=False
+                if xi > 0:
+                    empty_row = False
 
             if not empty_row and not found1:
                 found1 = True
@@ -160,8 +165,8 @@ class InitialCondition:
         for xi in range(len(dot[:, 0])):
             empty_column = True
             for yi in dot[xi, :]:
-                if yi>0:
-                    empty_column=False
+                if yi > 0:
+                    empty_column = False
 
             if not empty_column and not found1:
                 found1 = True
@@ -192,28 +197,30 @@ class InitialCondition:
             float: 
         """
         # Find the minimum and maximum x indices
-        xFloor = np.argmax(self.potential_dict['xlist']>x)-1
-        xCeil = np.argmax(self.potential_dict['xlist']>x)
+        xFloor = np.argmax(self.potential_dict['xlist'] > x)-1
+        xCeil = np.argmax(self.potential_dict['xlist'] > x)
 
         # Find the minimum and maximum y indices
-        yFloor = np.argmax(self.potential_dict['ylist']>y)-1
-        yCeil = np.argmax(self.potential_dict['ylist']>y)
-        
-        dx = self.potential_dict['xlist'][xCeil]-self.potential_dict['xlist'][xFloor]
-        dy = self.potential_dict['ylist'][yCeil]-self.potential_dict['ylist'][yFloor]
+        yFloor = np.argmax(self.potential_dict['ylist'] > y)-1
+        yCeil = np.argmax(self.potential_dict['ylist'] > y)
+
+        dx = self.potential_dict['xlist'][xCeil] - \
+            self.potential_dict['xlist'][xFloor]
+        dy = self.potential_dict['ylist'][yCeil] - \
+            self.potential_dict['ylist'][yFloor]
 
         value_floor_left = (self.potential_dict['xlist'][xCeil] - x)/dx * dot[xFloor, yFloor] + \
             (x - self.potential_dict['xlist'][xFloor])/dx * dot[xCeil, yFloor]
-        
+
         value_ceil_left = (self.potential_dict['xlist'][xCeil] - x)/dx * dot[xFloor, yCeil] + \
             (x - self.potential_dict['xlist'][xFloor])/dx * dot[xCeil, yCeil]
 
         interpolated_value = (self.potential_dict['ylist'][yCeil] - y)/dy * value_floor_left + \
             (y - self.potential_dict['ylist'][yFloor])/dy * value_ceil_left
-        
+
         return (interpolated_value-dot_min)/(dot_max-dot_min)
 
-    def _generate_points(self, max_electrons: int, bounds: list, dot: ArrayLike, dot_min: float, dot_max: float, epsilon: float, verbose: bool=True) -> ArrayLike:
+    def _generate_points(self, max_electrons: int, bounds: list, dot: ArrayLike, dot_min: float, dot_max: float, epsilon: float, verbose: bool = True) -> ArrayLike:
         """Fills the dot with electrons until it reaches the desired number of electrons.
         The points are generated randomly and checked for overlap with the existing points.
         It will retry up to 100 times to add additional points that do not overlap.
@@ -238,7 +245,7 @@ class InitialCondition:
         while len(points) < max_electrons and failures < max_failures:
             x = np.random.uniform(bounds[0], bounds[1])
             y = np.random.uniform(bounds[2], bounds[3])
-            
+
             # Add a random point if it is below the chemical potential and does not overlap with any other point
             if np.random.rand() < self._density_function(x, y, dot, dot_min, dot_max) and self._no_overlap(points, (x, y), epsilon=epsilon):
                 points.append((x, y))
@@ -247,6 +254,7 @@ class InitialCondition:
                 failures += 1
 
         if (failures == max_failures) and verbose:
-            print(f'WARNING in creating initial condition: could not fit more than {len(points)} electrons.')
-                
+            print(
+                f'WARNING in creating initial condition: could not fit more than {len(points)} electrons.')
+
         return np.array(points)
