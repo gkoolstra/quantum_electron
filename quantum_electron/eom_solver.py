@@ -36,10 +36,11 @@ class EOMSolver:
         self.curv_xy = curv_xy
         self.curv_yy = curv_yy
 
-    def setup_eom_coupled_lc(self, ri: ArrayLike, resonator_dict: Dict) -> tuple[ArrayLike]:
+    def setup_eom_coupled_lc(self, ri: ArrayLike,
+                             resonator_dict: Dict) -> tuple[ArrayLike]:
         """
         Set up the Matrix used for determining the electron motional frequencies and cavity frequency.
-        This function is used for the coupled LC resonator model. The electrons are located in between the plates of the 
+        This function is used for the coupled LC resonator model. The electrons are located in between the plates of the
         capacitor Cdot.
 
         Args:
@@ -59,7 +60,8 @@ class EOMSolver:
 
         self.num_cavity_modes = 2
 
-        # We first solve the cavity equations without electrons to identify the common and differential modes
+        # We first solve the cavity equations without electrons to identify the
+        # common and differential modes
         D = C1 * C2 + C1 * Cdot + C2 * Cdot
 
         # Mass matrix of the cavity only
@@ -73,9 +75,11 @@ class EOMSolver:
         eigenvalues, _ = scipy.linalg.eigh(K, b=M)
         f0, f1 = np.sqrt(eigenvalues) / (2 * np.pi)
 
-        # The differential mode is the smaller, because the coupling capacitance adds to the resonance
+        # The differential mode is the smaller, because the coupling
+        # capacitance adds to the resonance
         self.f0_diff = np.min([f0, f1])
-        # The common mode is higher, because the coupling capacitance doesn't participate in the resonance.
+        # The common mode is higher, because the coupling capacitance doesn't
+        # participate in the resonance.
         self.f0_comm = np.max([f0, f1])
 
         if resonator_dict['mode'] == 'comm':
@@ -97,19 +101,20 @@ class EOMSolver:
             np.shape(M)), np.zeros(np.shape(M))
         K = np.zeros((2 * num_electrons + 2, 2 * num_electrons + 2))
 
-        # Row 1 and column 1 only have bare cavity information, and cavity-electron terms
+        # Row 1 and column 1 only have bare cavity information, and
+        # cavity-electron terms
         K[:2, :2] = np.array([[(C2 + Cdot) / D, Cdot / D],
                               [Cdot / D, (C1 + Cdot) / D]])
 
-        K[2:num_electrons+2, 0] = K[0, 2:num_electrons+2] = q_e / D * \
+        K[2:num_electrons + 2, 0] = K[0, 2:num_electrons + 2] = q_e / D * \
             ((C2 + Cdot) * self.Ex_up(xe, ye) - Cdot * self.Ex_down(xe, ye))
-        K[2:num_electrons+2, 1] = K[1, 2:num_electrons+2] = q_e / D * \
+        K[2:num_electrons + 2, 1] = K[1, 2:num_electrons + 2] = q_e / D * \
             ((C1 + Cdot) * self.Ex_down(xe, ye) - Cdot * self.Ex_up(xe, ye))
 
-        K[num_electrons+2:2*num_electrons+2, 0] = K[0, num_electrons+2:2*num_electrons +
-                                                    2] = q_e / D * ((C2 + Cdot) * self.Ey_up(xe, ye) - Cdot * self.Ey_down(xe, ye))
-        K[num_electrons+2:2*num_electrons+2, 1] = K[1, num_electrons+2:2*num_electrons +
-                                                    2] = q_e / D * ((C1 + Cdot) * self.Ey_down(xe, ye) - Cdot * self.Ey_up(xe, ye))
+        K[num_electrons + 2:2 * num_electrons + 2, 0] = K[0, num_electrons + 2:2 * num_electrons +
+                                                          2] = q_e / D * ((C2 + Cdot) * self.Ey_up(xe, ye) - Cdot * self.Ey_down(xe, ye))
+        K[num_electrons + 2:2 * num_electrons + 2, 1] = K[1, num_electrons + 2:2 * num_electrons +
+                                                          2] = q_e / D * ((C1 + Cdot) * self.Ey_down(xe, ye) - Cdot * self.Ey_up(xe, ye))
 
         kij_plus = np.zeros((num_electrons, num_electrons))
         kij_minus = np.zeros((num_electrons, num_electrons))
@@ -154,23 +159,24 @@ class EOMSolver:
         np.fill_diagonal(lij, 0)
 
         Kij_plus = -kij_plus + \
-            np.diag(q_e*self.curv_xx(xe, ye) + np.sum(kij_plus, axis=1))
+            np.diag(q_e * self.curv_xx(xe, ye) + np.sum(kij_plus, axis=1))
         Kij_minus = -kij_minus + \
-            np.diag(q_e*self.curv_yy(xe, ye) + np.sum(kij_minus, axis=1))
-        Lij = -lij + np.diag(q_e*self.curv_xy(xe, ye) + np.sum(lij, axis=1))
+            np.diag(q_e * self.curv_yy(xe, ye) + np.sum(kij_minus, axis=1))
+        Lij = -lij + np.diag(q_e * self.curv_xy(xe, ye) + np.sum(lij, axis=1))
 
-        K[2:num_electrons+2, 2:num_electrons+2] = Kij_plus
-        K[num_electrons+2:2*num_electrons+2,
-            num_electrons+2:2*num_electrons+2] = Kij_minus
-        K[2:num_electrons+2, num_electrons+2:2*num_electrons+2] = Lij
-        K[num_electrons+2:2*num_electrons+2, 2:num_electrons+2] = Lij
+        K[2:num_electrons + 2, 2:num_electrons + 2] = Kij_plus
+        K[num_electrons + 2:2 * num_electrons + 2,
+            num_electrons + 2:2 * num_electrons + 2] = Kij_minus
+        K[2:num_electrons + 2, num_electrons + 2:2 * num_electrons + 2] = Lij
+        K[num_electrons + 2:2 * num_electrons + 2, 2:num_electrons + 2] = Lij
 
         return K, M
 
-    def setup_eom(self, ri: ArrayLike, resonator_dict: Dict) -> tuple[ArrayLike]:
+    def setup_eom(self, ri: ArrayLike,
+                  resonator_dict: Dict) -> tuple[ArrayLike]:
         """Set up the Matrix used for determining the electron motional frequencies and cavity frequency.
-        This function is used for a simple LC resonator model. The electrons are located in between the 
-        plates of the capacitor C. 
+        This function is used for a simple LC resonator model. The electrons are located in between the
+        plates of the capacitor C.
 
         Args:
             ri (ArrayLike): Electron positions, in the form [x0, y0, x1, y1, ...]
@@ -202,12 +208,13 @@ class EOMSolver:
             np.shape(invM)), np.zeros(np.shape(invM))
         K = np.zeros((2 * num_electrons + 1, 2 * num_electrons + 1))
 
-        # Row 1 and column 1 only have bare cavity information, and cavity-electron terms
+        # Row 1 and column 1 only have bare cavity information, and
+        # cavity-electron terms
         K[0, 0] = 1 / C
-        K[1:num_electrons+1, 0] = K[0, 1:num_electrons +
-                                    1] = q_e / C * self.Ex(xe, ye)
-        K[num_electrons+1:2*num_electrons+1, 0] = K[0, num_electrons +
-                                                    1:2*num_electrons+1] = q_e / C * self.Ey(xe, ye)
+        K[1:num_electrons + 1, 0] = K[0, 1:num_electrons +
+                                      1] = q_e / C * self.Ex(xe, ye)
+        K[num_electrons + 1:2 * num_electrons + 1, 0] = K[0, num_electrons +
+                                                          1:2 * num_electrons + 1] = q_e / C * self.Ey(xe, ye)
 
         kij_plus = np.zeros((num_electrons, num_electrons))
         kij_minus = np.zeros((num_electrons, num_electrons))
@@ -258,17 +265,18 @@ class EOMSolver:
             np.diag(q_e * self.curv_yy(xe, ye) + np.sum(kij_minus, axis=1))
         Lij = -lij + np.diag(q_e * self.curv_xy(xe, ye) + np.sum(lij, axis=1))
 
-        K[1:num_electrons+1, 1:num_electrons+1] = Kij_plus
-        K[num_electrons+1:2*num_electrons+1,
-            num_electrons+1:2*num_electrons+1] = Kij_minus
-        K[1:num_electrons+1, num_electrons+1:2*num_electrons+1] = Lij
-        K[num_electrons+1:2*num_electrons+1, 1:num_electrons+1] = Lij
+        K[1:num_electrons + 1, 1:num_electrons + 1] = Kij_plus
+        K[num_electrons + 1:2 * num_electrons + 1,
+            num_electrons + 1:2 * num_electrons + 1] = Kij_minus
+        K[1:num_electrons + 1, num_electrons + 1:2 * num_electrons + 1] = Lij
+        K[num_electrons + 1:2 * num_electrons + 1, 1:num_electrons + 1] = Lij
 
         return K, M
 
-    def solve_eom(self, LHS: ArrayLike, RHS: ArrayLike, filter_nan: bool = False, sort_by_cavity_participation: bool = True, cavity_mode_index: int = 0) -> tuple[ArrayLike]:
+    def solve_eom(self, LHS: ArrayLike, RHS: ArrayLike, filter_nan: bool = False,
+                  sort_by_cavity_participation: bool = True, cavity_mode_index: int = 0) -> tuple[ArrayLike]:
         """Solves the eigenvalues and eigenvectors for the system of equations constructed with setup_eom()
-        The order of eigenvalues, and order of the columns of EVecs is coupled. By default scipy sorts this from low eigenvalue to high eigenvalue, however, 
+        The order of eigenvalues, and order of the columns of EVecs is coupled. By default scipy sorts this from low eigenvalue to high eigenvalue, however,
         by flagging sort_by_cavity_participation, this function will return the eigenvalues and vectors sorted by largest cavity contribution first.
 
         Args:
@@ -284,11 +292,14 @@ class EOMSolver:
         EVals, EVecs = scipy.linalg.eigh(LHS, b=RHS)
 
         if sort_by_cavity_participation:
-            # The cavity participation is the first element of each eigenvector, because that's how the matrix was constructed.
+            # The cavity participation is the first element of each
+            # eigenvector, because that's how the matrix was constructed.
             cavity_participation = EVecs[cavity_mode_index, :]
-            # Sort by largest cavity participation (argsort will normally put the smallest first, so invert it)
+            # Sort by largest cavity participation (argsort will normally put
+            # the smallest first, so invert it)
             sorted_order = np.argsort(np.abs(cavity_participation))[::-1]
-            # Only the columns are ordered, the rows (electrons) are not shuffled. Keep the Evals and Evecs order consistent.
+            # Only the columns are ordered, the rows (electrons) are not
+            # shuffled. Keep the Evals and Evecs order consistent.
             EVecs = EVecs[:, sorted_order]
             EVals = EVals[sorted_order]
 
@@ -299,7 +310,8 @@ class EOMSolver:
 
         return np.sqrt(EVals) / (2 * np.pi), EVecs
 
-    def get_cavity_frequency_shift(self, LHS: ArrayLike, RHS: ArrayLike, cavity_mode_index: int = 0) -> float:
+    def get_cavity_frequency_shift(
+            self, LHS: ArrayLike, RHS: ArrayLike, cavity_mode_index: int = 0) -> float:
         """Solves the equations of motion and calculates how to resonator frequency is affected.
 
         Args:
@@ -314,7 +326,8 @@ class EOMSolver:
             LHS, RHS, sort_by_cavity_participation=True, cavity_mode_index=cavity_mode_index)
         return eigenfrequencies[0] - self.f0
 
-    def plot_eigenvector(self, electron_positions: ArrayLike, eigenvector: ArrayLike, length: float = 0.5, color: str = 'k') -> None:
+    def plot_eigenvector(self, electron_positions: ArrayLike,
+                         eigenvector: ArrayLike, length: float = 0.5, color: str = 'k') -> None:
         """Plots the eigenvector at the electron positions.
 
         Args:
@@ -330,13 +343,15 @@ class EOMSolver:
         # Normalize the vector to 'length'
         evec_norm = eigenvector[self.num_cavity_modes:] / \
             np.linalg.norm(eigenvector[self.num_cavity_modes:])
-        # The x and y components are ordered differently than electron positions. This depends on the ordering of the K and M matrix, see setup_eom.
+        # The x and y components are ordered differently than electron
+        # positions. This depends on the ordering of the K and M matrix, see
+        # setup_eom.
         dxs = (evec_norm * length)[:N_e]
         dys = (evec_norm * length)[N_e:]
 
         for e_idx in range(len(e_x)):
             width = 0.025
-            plt.arrow(e_x[e_idx] * 1e6, e_y[e_idx] * 1e6, dx=dxs[e_idx], dy=dys[e_idx], width=width, head_length=1.5*3 * width, head_width=3.5*width,
+            plt.arrow(e_x[e_idx] * 1e6, e_y[e_idx] * 1e6, dx=dxs[e_idx], dy=dys[e_idx], width=width, head_length=1.5 * 3 * width, head_width=3.5 * width,
                       edgecolor='k', lw=0.4, facecolor=color)
 
     def animate_eigenvectors(self, fig, axs_list: list, eigenvector_list: List[ArrayLike], electron_positions: ArrayLike, marker_size: float = 10,
@@ -344,11 +359,11 @@ class EOMSolver:
         """Make a matplotlib animation object for saving as a gif, or for displaying in a notebook.
         For use in displaying only:
 
-        from IPython import display 
+        from IPython import display
         ani = animate_eigenvectors(fig, axs, evecs.T, res['x'], amplitude=0.10e-6, time_points=21, frame_interval_ms=25)
         # Display animation
-        video = ani.to_html5_video() 
-        html = display.HTML(video) 
+        video = ani.to_html5_video()
+        html = display.HTML(video)
         display.display(html)
 
         # Save animation
@@ -357,7 +372,7 @@ class EOMSolver:
 
         Args:
             fig (matplotlib.pyplot.figure): Matplotlib figure handle.
-            axs_list (matplotlib.pyplot.axes): List of axes, e.g. for subplots. 
+            axs_list (matplotlib.pyplot.axes): List of axes, e.g. for subplots.
             eigenvector_list (List[ArrayLike]): Eigenvector array. eigenvector_list[0] will be plot on axs_list[0] etc.
             electron_positions (ArrayLike): Electron coordinates in the format [x0, y0, x1, y1, ...]
             amplitude (float, optional): Amplitude of the motion in units of meters. Defaults to 0.5e-6.
@@ -372,7 +387,7 @@ class EOMSolver:
 
         all_points = list()
         for ax in axs_list:
-            pts_data = ax.plot(e_x*1e6, e_y*1e6, 'ok', mfc='mediumseagreen', mew=0.5,
+            pts_data = ax.plot(e_x * 1e6, e_y * 1e6, 'ok', mfc='mediumseagreen', mew=0.5,
                                ms=marker_size, path_effects=[pe.SimplePatchShadow(), pe.Normal()])
             all_points.append(pts_data)
 
@@ -393,10 +408,11 @@ class EOMSolver:
             return all_points,
 
         # The interval is in milliseconds
-        return animation.FuncAnimation(fig=fig, func=update, frames=time_points, interval=frame_interval_ms, repeat=True)
+        return animation.FuncAnimation(
+            fig=fig, func=update, frames=time_points, interval=frame_interval_ms, repeat=True)
 
     def show_animation(self, matplotlib_animation) -> display.display:
-        """Display an animation in a jupyter notebook. 
+        """Display an animation in a jupyter notebook.
 
         Args:
             matplotlib_animation (matplotlib.animation.FuncAnimation): animation object, for example from `animate_eigenvectors`
