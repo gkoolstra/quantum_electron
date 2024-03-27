@@ -3,9 +3,7 @@
 ![image info](./images/electron_results.png)
 ## Main use cases
 This package has two main functions
-1. It simulates electron positions in a two dimensional plane for electrons confined in an electrostatic potential $\phi$. Electron-electron interactions are also taken into account. Physically, it minimizes the total energy of an $N$-electron system, which is given by: 
-
-$$ -e\sum_i \phi(\mathbf{r}_i) + \sum_{i<j} \frac{e^2}{4\pi \epsilon_0} \frac{1}{|\mathbf{r}_i - \mathbf{r}_j|}$$ 
+1. It simulates electron positions in a two dimensional plane for electrons confined in an electrostatic potential $\phi$. Electron-electron interactions are also taken into account. Physically, it minimizes the total energy of an $N$-electron system, which is given by $ -e\sum_i \phi(\mathbf{r}_i) + \sum_{i<j} \frac{e^2}{4 \pi \epsilon_0} \frac{1}{|\mathbf{r}_i - \mathbf{r}_j|}$.
 
 2. It calculates properties of in-plane electron modes. This is useful in two cases: (a) the electron motional states can be used for quantum computation, and this package can help to determine eigenfrequencies and eigenvectors of electron clusters (b) in the large $N$ limit the electron motional modes are also known as plasmons. There is an abundance of literature about these charge density waves, and many of the properties can be reproduced with this module.
 
