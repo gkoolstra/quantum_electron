@@ -461,7 +461,7 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
             ax.plot(x*1e6, y*1e6, 'ok', mfc=color, mew=0.5, ms=marker_size,
                     path_effects=[pe.SimplePatchShadow(), pe.Normal()])
 
-    def animate_voltage_sweep(self, list_of_voltages: list, list_of_electron_positions: list, coor: tuple = (0, 0), dxdy: tuple = (2, 2), frame_interval_ms: int = 10) -> matplotlib.animation.FuncAnimation:
+    def animate_voltage_sweep(self, fig, ax, list_of_voltages: list, list_of_electron_positions: list, coor: tuple = (0, 0), dxdy: tuple = (2, 2), frame_interval_ms: int = 10) -> matplotlib.animation.FuncAnimation:
         """
         Animates a voltage sweep by updating the voltage and electron positions over time. 
         This function only animates the sweep, it does not calculate the electron positions. This needs to be done beforehand.
@@ -485,10 +485,11 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         potential = make_potential(self.potential_dict, list_of_voltages[0])
         zdata = -potential.T
 
-        fig = plt.figure(figsize=(7, 4))
-        ax = fig.add_subplot(111)
-        img_data = ax.imshow(zdata, cmap=plt.cm.RdYlBu_r, extent=[coor[0] - dxdy[0]/2, coor[0] + dxdy[0]/2,
-                                                                  coor[1] - dxdy[1]/2, coor[1] + dxdy[1]/2])
+        if (fig is None) or (ax is None):
+            fig, ax = plt.subplots(1, 1, figsize=(7, 4))
+
+        img_data = ax.imshow(zdata[::-1, :], cmap=plt.cm.RdYlBu_r, extent=[np.min(self.potential_dict['xlist']), np.max(self.potential_dict['xlist']),
+                                                                           np.min(self.potential_dict['ylist']), np.max(self.potential_dict['ylist'])])
 
         final_x, final_y = r2xy(list_of_electron_positions[0])
         pts_data = ax.plot(final_x*1e6, final_y*1e6, 'ok', mfc='mediumseagreen', mew=0.5, ms=10,
@@ -529,7 +530,7 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
             zdata = -potential.T
 
             # Update the color plot
-            img_data.set_data(zdata)
+            img_data.set_data(zdata[::-1, :])
 
             # Update the electron positions (green dots)
             pts_data[0].set_xdata(final_x * 1e6)
@@ -544,7 +545,7 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
 
         return animation.FuncAnimation(fig=fig, func=update, frames=np.arange(len(list_of_voltages)), interval=frame_interval_ms, repeat=True)
 
-    def animate_convergence(self, coor: tuple = (0, 0), dxdy: tuple = (2, 2), frame_interval_ms: int = 10) -> matplotlib.animation.FuncAnimation:
+    def animate_convergence(self, fig, ax, coor: tuple = (0, 0), dxdy: tuple = (2, 2), frame_interval_ms: int = 10) -> matplotlib.animation.FuncAnimation:
         """Animate the convergence data stored in the convergence helper class. 
 
         Args:
@@ -558,7 +559,9 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         # The position data is stored in the coordinates of the helper class
         r = self.CM.curr_xk
 
-        fig, ax = plt.subplots(1, 1, figsize=(4, 4))
+        if (fig is None) or (ax is None):
+            fig, ax = plt.subplots(1, 1, figsize=(4, 4))
+
         self.plot_potential_energy(
             ax=ax, coor=coor, dxdy=dxdy, print_voltages=False, plot_contours=False)
 
