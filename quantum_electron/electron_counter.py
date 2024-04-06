@@ -495,7 +495,7 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         pts_data = ax.plot(final_x*1e6, final_y*1e6, 'ok', mfc='mediumseagreen', mew=0.5, ms=10,
                            path_effects=[pe.SimplePatchShadow(), pe.Normal()])
 
-        cbar = plt.colorbar(img_data)
+        cbar = plt.colorbar(img_data, fraction=0.046, pad=0.04)
         tick_locator = matplotlib.ticker.MaxNLocator(nbins=4)
         cbar.locator = tick_locator
         cbar.update_ticks()
