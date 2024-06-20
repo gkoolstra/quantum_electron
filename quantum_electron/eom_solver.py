@@ -180,32 +180,38 @@ class EOMSolver:
 
         Args:
             ri (ArrayLike): Electron positions, in the form [x0, y0, x1, y1, ...]
-            resonator_dict (Dict): Dictionary containing the parameters of the resonator. Must have f0, Z0 as keys.
+            resonator_dict (Dict): Dictionary containing the parameters of the resonator. If supplied, it must have f0, Z0 as keys.
             f0 is the frequency of the resonator, and Z0 is the impedance of the resonator.
 
         Returns:
             tuple[ArrayLike]: kinetic matrix K, and mass matrix M
         """
-        # Instantiate this for use in get_cavity_frequency_shift
-        self.f0 = resonator_dict['f0']
+        if resonator_dict is not None:
+            # Instantiate this for use in get_cavity_frequency_shift
+            self.f0 = resonator_dict['f0']
 
-        omega0 = 2 * np.pi * self.f0
-        L = resonator_dict['Z0'] / omega0
-        C = 1 / (omega0**2 * L)
-        self.num_cavity_modes = 1
+            omega0 = 2 * np.pi * self.f0
+            L = resonator_dict['Z0'] / omega0
+            C = 1 / (omega0**2 * L)
+            self.num_cavity_modes = 1
+        else:
+            # Make two dummy variables for L and C, we will crop the matrices later.
+            L = 1
+            C = 1
+            self.num_cavity_modes = 0
 
         num_electrons = int(len(ri) / 2)
         xe, ye = r2xy(ri)
 
         # Set up the inverse of the mass matrix first
-        diag_invM = 1 / m_e * np.ones(2 * num_electrons + 1)
-        diag_invM[0] = 1 / L
-        invM = np.diag(diag_invM)
+        # diag_invM = 1 / m_e * np.ones(2 * num_electrons + 1)
+        # diag_invM[0] = 1 / L
+        # invM = np.diag(diag_invM)
         M = np.diag(np.array([L] + [m_e] * (2 * num_electrons)))
 
         # Set up the kinetic matrix next
-        Kij_plus, Kij_minus, Lij = np.zeros(np.shape(invM)), np.zeros(
-            np.shape(invM)), np.zeros(np.shape(invM))
+        Kij_plus, Kij_minus, Lij = np.zeros(np.shape(M)), np.zeros(
+            np.shape(M)), np.zeros(np.shape(M))
         K = np.zeros((2 * num_electrons + 1, 2 * num_electrons + 1))
 
         # Row 1 and column 1 only have bare cavity information, and
@@ -270,6 +276,10 @@ class EOMSolver:
             num_electrons + 1:2 * num_electrons + 1] = Kij_minus
         K[1:num_electrons + 1, num_electrons + 1:2 * num_electrons + 1] = Lij
         K[num_electrons + 1:2 * num_electrons + 1, 1:num_electrons + 1] = Lij
+
+        # Crop the arrays if we only want the electron modes, and not the cavity modes
+        K = K[(1 - self.num_cavity_modes):, (1 - self.num_cavity_modes):]
+        M = M[(1 - self.num_cavity_modes):, (1 - self.num_cavity_modes):]
 
         return K, M
 
