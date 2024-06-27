@@ -14,6 +14,8 @@ This package has two main functions
 - Periodic boundary condition support for systems with open boundaries.
 - Seemless integration with finite element modeling software ZeroHeliumKit.
 
+![Package performance](./images/performance.png)
+
 ## Installation
 
 Clone this module in a directory of your choice
