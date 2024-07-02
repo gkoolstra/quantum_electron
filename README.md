@@ -86,4 +86,3 @@ If you found this module useful in your research, please consider citing this co
 - [ ] Write documentation for example notebook 03
 - [ ] Find a place for the code in example notebook 04.
 - [ ] Split off the Schrodinger solver?
-- [ ] Performance metrics
