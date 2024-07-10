@@ -83,6 +83,4 @@ If you found this module useful in your research, please consider citing this co
 ## To-do list
 - [ ] Standardize units of the arguments. Sometimes it is unclear whether to use microns or meters.
 - [ ] Figure out how to handle warning messages for convergence issues. Why do problems sometimes have a hard time converging?
-- [ ] Write documentation for example notebook 03
-- [ ] Find a place for the code in example notebook 04.
 - [ ] Split off the Schrodinger solver?
