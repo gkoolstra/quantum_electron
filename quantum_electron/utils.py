@@ -248,9 +248,211 @@ class PotentialVisualization:
     def __init__(self, potential_dict: Dict[str, ArrayLike], voltages: Dict[str, float]):
         self.potential_dict = potential_dict
         self.voltage_dict = voltages
+            
+    def plot_coupling_constant_ratio(self, electrode1: str, electrode2: Optional[str], loc: tuple = (-1, 0), ax=None, coor: Optional[List[float]] = [0, 0], dxdy: List[float] = [1, 2], 
+                                     figsize: tuple[float, float] = (7, 4), contour_levels: ArrayLike = [], clim: Optional[tuple] = None) -> float:
+        """Plots and returns the ratio of coupling constants for a set of two electrodes, electrode1 and electrode2. electrode1 and electrode2 must be present as keys in 
+        voltage_dict. loc controls the location at which the ratio of coupling constants is evaluated and returned.
 
+        Args:
+            electrode1 (str): Electrode name
+            electrode2 (str): Electrode name, may be None. If None, only the coupling constant of electrode 1 is plotted.
+            loc (tuple, optional): Location where the ratio electrode1/electrode2 is evaluated. Defaults to (-1, 0).
+            ax (_type_, optional): Matplotlib axes instance. If None, a new instance will be created. Defaults to None.
+            coor (Optional[List[float]], optional): Center for the 2D plot in units of microns. Defaults to [0, 0].
+            dxdy (List[float], optional): Extent (dx, dy) of the 2D plot in units of microns. Defaults to [1, 2].
+            figsize (tuple[float, float], optional): Matplotlib figure size in inches. Defaults to (7, 4).
+            show_minimum (bool, optional): If True, it plots a star where the ratio is smallest. Defaults to True.
+            contour_levels (ArrayLike, optional): Contour levels, must be a list. Defaults to [].
+            clim (Optional[tuple], optional): Limits for the colorbar. Defaults to None.
+
+        Returns:
+            float: Ratio of the coupling constants evaluated at the location specified by 'loc'.
+        """
+        # Take the ratio between the two coupling constants
+        if electrode2 is not None:
+            zdata = self.potential_dict[electrode1].T / self.potential_dict[electrode2].T
+        else:
+            zdata = self.potential_dict[electrode1].T
+
+        if ax is None:
+            fig = plt.figure(figsize=figsize)
+            ax = fig.add_subplot(111)
+            make_colorbar = True
+        else:
+            make_colorbar = False
+
+        if clim is not None:
+            pcm = ax.pcolormesh(
+                self.potential_dict['xlist'], self.potential_dict['ylist'], zdata, vmin=clim[0], vmax=clim[1], cmap=plt.cm.RdYlBu_r)
+        else:
+            pcm = ax.pcolormesh(
+                self.potential_dict['xlist'], self.potential_dict['ylist'], zdata, cmap=plt.cm.RdYlBu_r)
+
+        if make_colorbar:
+            cbar = plt.colorbar(pcm, fraction=0.046, pad=0.04)
+            tick_locator = matplotlib.ticker.MaxNLocator(nbins=4)
+            cbar.locator = tick_locator
+            cbar.update_ticks()
+            cbar.ax.set_ylabel(f"Ratio of {electrode1} and {electrode2}")
+
+        ax.set_xlim(coor[0] - dxdy[0]/2, coor[0] + dxdy[0]/2)
+        ax.set_ylim(coor[1] - dxdy[1]/2, coor[1] + dxdy[1]/2)
+        ax.set_aspect('equal')
+
+        if len(contour_levels) >= 1:
+            CS = ax.contour(
+                self.potential_dict['xlist'], self.potential_dict['ylist'], zdata, levels=contour_levels)
+            ax.clabel(CS, CS.levels, inline=True, fontsize=10)
+
+        ax.set_xlabel("$x$"+f" ({chr(956)}m)")
+        ax.set_ylabel("$y$"+f" ({chr(956)}m)")
+        ax.locator_params(axis='both', nbins=4)
+
+        if ax is None:
+            plt.tight_layout()
+            
+        xidx = np.argmin(np.abs(self.potential_dict['xlist'] - loc[0]))
+        yidx = np.argmin(np.abs(self.potential_dict['ylist'] - loc[1]))
+        ax.plot(loc[0], loc[1], '*', color='white')
+        
+        return zdata[yidx, xidx]
+        
+    def plot_coupling_constants(self, loc: tuple = (-1, 0), plot_coor: tuple = (0, 0), plot_dxdy: tuple = (3., 2.), clim: tuple = (0, 1)) -> dict:
+        """Plots the grid of all coupling constants / lever arms in the potential dict. These are the potential maps when 1V is applied to each 
+        respective electrode. It also returns the values of the coupling constants at the location loc = (x, y) in a dictionary.
+
+        Args:
+            loc (tuple, optional): Location to evaluate the coupling constants at (x, y) in micron. Defaults to (-1, 0).
+            plot_coor (tuple, optional): Center for each of the 2D plots. Defaults to (0, 0).
+            plot_dxdy (tuple, optional): Extent (width and height) in microns for each of the 2D plots. Defaults to (3., 2.).
+            clim (tuple, optional): Colorbar limits for each of the 2D plots. Defaults to (0, 1).
+
+        Returns:
+            dict: Dictionary with electrode names as keys, and the value of the coupling constants evaluated at the position set by loc.
+        """
+        num_electrodes = len(self.voltage_dict.keys())
+        num_rows = int(np.ceil(num_electrodes / 3))
+        aspect = plot_dxdy[1] / plot_dxdy[0]
+        
+        initial_voltage_dict = self.voltage_dict.copy()
+
+        fig, axs = plt.subplots(num_rows, 3, figsize=(3 * 3, num_rows * 3 * aspect))
+
+        k = 0
+        coupling_coeffs = {}
+        for ax, electrode_name in zip(axs.flatten(), self.voltage_dict.keys()):
+            for el in self.voltage_dict.keys():
+                self.voltage_dict[el] = 1 if el == electrode_name else 0
+                            
+            # Note the colorbar limits are reversed, because the potential energy is -1 x coupling constants.
+            self.plot_potential_energy(ax=ax, coor=plot_coor, dxdy=plot_dxdy, print_voltages=False, 
+                                       plot_contours=False, show_minimum=False, clim=(-clim[1], -clim[0]))
+            
+            if k % 3 != 0:
+                ax.set_ylabel("")
+            if k < (num_electrodes - 3):
+                ax.set_xlabel("")
+            
+            xidx = np.argmin(np.abs(self.potential_dict['xlist'] - loc[0]))
+            yidx = np.argmin(np.abs(self.potential_dict['ylist'] - loc[1]))
+            
+            potential = make_potential(self.potential_dict, self.voltage_dict).T
+            coupling_coeffs[electrode_name] = potential[yidx, xidx]
+            
+            ax.plot(loc[0], loc[1], '*', color='white')
+            ax.set_title(f"{electrode_name}: {coupling_coeffs[electrode_name]:.3f}")
+            
+            k += 1
+            
+        # Don't show the remaining subplots in the grid.
+        for jj in range(k, len(axs.flatten())):
+            axs.flatten()[jj].axis("off")
+            
+        fig.tight_layout()
+        
+        # Reset the voltage dict:
+        self.voltage_dict = initial_voltage_dict
+        
+        return coupling_coeffs
+        
+    def plot_potential_slice(self, ax=None, x: ArrayLike = [], y: ArrayLike = [], axlims: Optional[tuple] = None, 
+                             figsize: tuple[float, float] = (6, 3), print_voltages: bool = True, 
+                             tag: str = 'auto'):
+        """Plot a potential slice along x or y. To control the dimension, supply arguments in one of the two forms
+        - x = [x0], y = np.linspace(ymin, ymax, ...) to plot the potential vs. y at x = x0 OR
+        - y = [y0], x = np.linspace(xmin, xmax, ...) to plot the potential vs. x at y = y0
+
+        Args:
+            ax (_type_, optional): Matplotlib axes object. If None, a new instance will be created. Defaults to None.
+            x (ArrayLike, optional): x values for the potential slice. Must be at least of length 1. Defaults to [].
+            y (ArrayLike, optional): y values for the potential slice. Must be at least of length 1. Defaults to [].
+            axlims (Optional[tuple], optional): Limits in eV of the vertical axis of the plot. Defaults to None.
+            figsize (tuple[float, float], optional): Figure size in inches. Defaults to (6, 3).
+            print_voltages (bool, optional): Prints the voltages for each potential next to the plot. Defaults to True.
+            tag (str, optional): Label in the legend that goes into the legend. If auto, the label is either x0 or y0. Defaults to 'auto'.
+
+        Raises:
+            ValueError: If x and y are not according to the rules above, a ValueError is raised.
+        """
+        potential = make_potential(self.potential_dict, self.voltage_dict)
+        zdata = -potential.T
+        
+        if ax is None:
+            fig = plt.figure(figsize=figsize)
+            ax = fig.add_subplot(111)
+            
+        if len(x) == 1: 
+            # We are plotting along the y-axis for one particular value of x
+            x_idx = np.argmin(np.abs(self.potential_dict['xlist'] - x[0]))
+            label = rf"$x$ = {x[0]:.2f}"+f" {chr(956)}m" if tag == 'auto' else tag
+            
+            ax.plot(self.potential_dict['ylist'], zdata[:, x_idx], label=label)
+            ax.set_xlabel("$y$"+f" ({chr(956)}m)")
+            ax.set_ylabel(r"Potential energy $-eV(x,y)$")
+            if axlims is not None:
+                ax.set_ylim(axlims)
+                
+            ax.set_xlim(np.min(y), np.max(y))
+            ax.locator_params(axis='both', nbins=4)
+            ax.legend(loc=0, frameon=False)
+            
+            if print_voltages:
+                for k, electrode in enumerate(self.voltage_dict.keys()):
+                    xmin, xmax = ax.get_xlim()
+                    ymin, ymax = ax.get_ylim()
+
+                    ax.text(xmin - 0.3 * (xmax - xmin), ymax - k * 0.1 * (ymax - ymin),
+                            f"{electrode} = {self.voltage_dict[electrode]:.2f} V", ha='right', va='top')
+            
+        elif len(y) == 1: 
+            # We are plotting along the x-axis for one particular value of y
+            y_idx = np.argmin(np.abs(self.potential_dict['ylist'] - y[0]))
+            label=rf"$y$ = {y[0]:.2f}"+f" {chr(956)}m" if tag == 'auto' else tag
+            
+            ax.plot(self.potential_dict['xlist'], zdata[y_idx, :], label=label)
+            ax.set_xlabel("$x$"+f" ({chr(956)}m)")
+            ax.set_ylabel(r"Potential energy $-eV(x,y)$")
+            if axlims is not None:
+                ax.set_ylim(axlims)
+            ax.set_xlim(np.min(x), np.max(x))
+            ax.locator_params(axis='both', nbins=4)
+            ax.legend(loc=0, frameon=False)
+            
+            if print_voltages:
+                for k, electrode in enumerate(self.voltage_dict.keys()):
+                    xmin, xmax = ax.get_xlim()
+                    ymin, ymax = ax.get_ylim()
+
+                    ax.text(xmin - 0.3 * (xmax - xmin), ymax - k * 0.1 * (ymax - ymin),
+                            f"{electrode} = {self.voltage_dict[electrode]:.2f} V", ha='right', va='top')
+            
+        else:
+            raise ValueError("At least one of 'x' or 'y' must contain only 1 element to indicate a slice along 'x' or 'y'.")
+            
+        
     def plot_potential_energy(self, ax=None, coor: Optional[List[float]] = [0, 0], dxdy: List[float] = [1, 2], figsize: tuple[float, float] = (7, 4),
-                              print_voltages: bool = True,  plot_contours: bool = True) -> None:
+                              show_minimum: bool = True, print_voltages: bool = True,  plot_contours: bool = True, clim: Optional[tuple] = None) -> None:
         """Plot the potential energy as function of (x,y)
 
         Args:
@@ -269,11 +471,15 @@ class PotentialVisualization:
         else:
             make_colorbar = False
 
-        pcm = ax.pcolormesh(
-            self.potential_dict['xlist'], self.potential_dict['ylist'], zdata, cmap=plt.cm.RdYlBu_r)
+        if clim is not None:
+            pcm = ax.pcolormesh(
+                self.potential_dict['xlist'], self.potential_dict['ylist'], zdata, vmin=clim[0], vmax=clim[1], cmap=plt.cm.RdYlBu_r)
+        else:
+            pcm = ax.pcolormesh(
+                self.potential_dict['xlist'], self.potential_dict['ylist'], zdata, cmap=plt.cm.RdYlBu_r)
 
         if make_colorbar:
-            cbar = plt.colorbar(pcm)
+            cbar = plt.colorbar(pcm, fraction=0.046, pad=0.04)
             tick_locator = matplotlib.ticker.MaxNLocator(nbins=4)
             cbar.locator = tick_locator
             cbar.update_ticks()
