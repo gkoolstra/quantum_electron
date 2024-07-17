@@ -107,14 +107,14 @@ class EOMSolver:
                               [Cdot / D, (C1 + Cdot) / D]])
 
         K[2:num_electrons + 2, 0] = K[0, 2:num_electrons + 2] = q_e / D * \
-            ((C2 + Cdot) * self.Ex_up(xe, ye) - Cdot * self.Ex_down(xe, ye))
+            ((C2 + Cdot) * self.Ex_up(xe, ye) + Cdot * self.Ex_down(xe, ye))
         K[2:num_electrons + 2, 1] = K[1, 2:num_electrons + 2] = q_e / D * \
-            ((C1 + Cdot) * self.Ex_down(xe, ye) - Cdot * self.Ex_up(xe, ye))
+            ((C1 + Cdot) * self.Ex_down(xe, ye) + Cdot * self.Ex_up(xe, ye))
 
         K[num_electrons + 2:2 * num_electrons + 2, 0] = K[0, num_electrons + 2:2 * num_electrons +
-                                                          2] = q_e / D * ((C2 + Cdot) * self.Ey_up(xe, ye) - Cdot * self.Ey_down(xe, ye))
+                                                          2] = q_e / D * ((C2 + Cdot) * self.Ey_up(xe, ye) + Cdot * self.Ey_down(xe, ye))
         K[num_electrons + 2:2 * num_electrons + 2, 1] = K[1, num_electrons + 2:2 * num_electrons +
-                                                          2] = q_e / D * ((C1 + Cdot) * self.Ey_down(xe, ye) - Cdot * self.Ey_up(xe, ye))
+                                                          2] = q_e / D * ((C1 + Cdot) * self.Ey_down(xe, ye) + Cdot * self.Ey_up(xe, ye))
 
         kij_plus = np.zeros((num_electrons, num_electrons))
         kij_minus = np.zeros((num_electrons, num_electrons))
