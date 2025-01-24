@@ -372,6 +372,8 @@ class QuantumAnalysis(PotentialVisualization):
         Returns:
             tuple[ArrayLike, ArrayLike]: Eigenfrequencies of the first N motional modes in Hz, and a classification of the mode.
         """
+        if coor is None:
+            coor = find_minimum_location(self.potential_dict, self.voltage_dict)
 
         if not self.solved:
             self.solve_system(coor=coor, dxdy=dxdy, **solve_kwargs)
