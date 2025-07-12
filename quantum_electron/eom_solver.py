@@ -36,51 +36,98 @@ class EOMSolver:
         self.curv_xy = curv_xy
         self.curv_yy = curv_yy
 
+    def _get_common_mode_idx(self, eigenvectors):
+        """Helper function to determine the common mode index from eigenvectors in the charge basis
+        Assumes a 2 node circuit, there is only 1 common mode and 1 diff mode
+
+        Args:
+            eigenvectors (ArrayLike): NDArray such that eigenvectors[n] is an eigenvector
+
+        Returns:
+            int: index of the common mode
+        """
+        for k, ev in enumerate(eigenvectors):
+            if np.sign(ev[0]) == np.sign(ev[1]):
+                return k
+            
+    def _get_diff_mode_idx(self, eigenvectors):
+        """Helper function to determine the differential mode index from eigenvectors in the charge basis
+        Assumes a 2 node circuit, there is only 1 common mode and 1 diff mode
+
+        Args:
+            eigenvectors (ArrayLike): NDArray such that eigenvectors[n] is an eigenvector
+
+        Returns:
+            int: index of the common mode
+        """
+        for k, ev in enumerate(eigenvectors):
+            if np.sign(ev[0]) != np.sign(ev[1]):
+                return k
+
     def setup_eom_coupled_lc(self, ri: ArrayLike,
                              resonator_dict: Dict) -> tuple[ArrayLike]:
         """
         Set up the Matrix used for determining the electron motional frequencies and cavity frequency.
         This function is used for the coupled LC resonator model. The electrons are located in between the plates of the
         capacitor Cdot.
+        
+        For the equations used in this function, please see
+        https://journals.aps.org/prapplied/abstract/10.1103/PhysRevApplied.23.024001
 
         Args:
             ri (ArrayLike): Electron positions, in the form [x0, y0, x1, y1, ...]
-            resonator_dict (Dict): Dictionary containing the parameters of the resonator. Must have L1, L2, C1, C2, Cdot, mode.
-            Here L1, C1 are the inductance and capacitance of the first resonator, L2, C2 are the inductance and capacitance of the second resonator.
+            resonator_dict (Dict): Dictionary containing the parameters of the resonator. Must have La, Lb, Ca, Cb, Cdot, mode. Ltail is optional.
+            Here La, Ca are the inductance and capacitance of the first resonator, Lb, Cb are the inductance and capacitance of the second resonator.
             Cdot is the coupling capacitance between the two resonators. The mode key sets the f0 parameter and is used in get_cavity_frequency_shift.
 
         Returns:
-            tuple[ArrayLike]: kinetic matrix K, and mass matrix M
+            tuple[ArrayLike]: (kinetic matrix K aka [L], and mass matrix M aka [C]^-1) OR if Ltail is nonzero ([L]^-1 [C]^-1)
         """
-        C1 = resonator_dict['C1']
-        C2 = resonator_dict['C2']
+        Ca = resonator_dict['Ca']
+        Cb = resonator_dict['Cb']
         Cdot = resonator_dict['Cdot']
-        L1 = resonator_dict['L1']
-        L2 = resonator_dict['L2']
-
+        La = resonator_dict['La']
+        Lb = resonator_dict['Lb']
+        
+        # Figure out if the Ltail argument is present and nonzero
+        resonator_has_tail = True if ('Ltail' in resonator_dict.keys()) and abs(resonator_dict['Ltail']) > 0 else False
+        
         self.num_cavity_modes = 2
 
         # We first solve the cavity equations without electrons to identify the
         # common and differential modes
-        D = C1 * C2 + C1 * Cdot + C2 * Cdot
-
-        # Mass matrix of the cavity only
-        M = np.array([[L1, 0],
-                      [0, L2]])
+        D = Ca * Cb + Ca * Cdot + Cb * Cdot
 
         # Kinetic matrix of the cavity only
-        K = np.array([[(C2 + Cdot) / D, Cdot / D],
-                      [Cdot / D, (C1 + Cdot) / D]])
+        K = np.array([[(Cb + Cdot) / D, Cdot / D],
+                      [Cdot / D, (Ca + Cdot) / D]])
+        
+        # For the inductance matrix we have to be careful depending on whether there is a tail.
+        # For example, if Ltail is 0, we better use the regular equations of motion.
+        if resonator_has_tail:
+            Ltail = resonator_dict['Ltail']
 
-        eigenvalues, _ = scipy.linalg.eigh(K, b=M)
-        f0, f1 = np.sqrt(eigenvalues) / (2 * np.pi)
-
-        # The differential mode is the smaller, because the coupling
-        # capacitance adds to the resonance
-        self.f0_diff = np.min([f0, f1])
-        # The common mode is higher, because the coupling capacitance doesn't
-        # participate in the resonance.
-        self.f0_comm = np.max([f0, f1])
+            # Calculate the inductances of the effective circuit from the y-delta transform
+            L1 = (La * Lb + Lb * Ltail + La * Ltail) / La
+            L2 = (La * Lb + Lb * Ltail + La * Ltail) / Lb
+            L3 = (La * Lb + Lb * Ltail + La * Ltail) / Ltail
+            
+            # Mass matrix of the cavity only
+            Minv = np.array([[1/L1 + 1/L3, -1/L3],
+                             [-1/L3, 1/L2 + 1/L3]])
+            
+            eigenvalues, eigenvecs = np.linalg.eig(Minv @ K)
+            
+        else:
+            # Mass matrix of the cavity only
+            M = np.array([[La, 0],
+                          [0, Lb]])
+            
+            eigenvalues, eigenvecs = scipy.linalg.eigh(K, b=M)
+            
+        # Come up with a different way to identify common vs. diff mode based on eigenvectors
+        self.f0_diff = np.sqrt(eigenvalues)[self._get_diff_mode_idx(eigenvecs.T)] / (2 * np.pi)
+        self.f0_comm = np.sqrt(eigenvalues)[self._get_common_mode_idx(eigenvecs.T)] / (2 * np.pi)
 
         if resonator_dict['mode'] == 'comm':
             self.f0 = self.f0_comm
@@ -92,29 +139,34 @@ class EOMSolver:
 
         num_electrons = int(len(ri) / 2)
         xe, ye = r2xy(ri)
-
-        # Set up the inverse of the mass matrix first
-        M = np.diag(np.array([L1] + [L2] + [m_e] * (2 * num_electrons)))
+        
+        # Depending on whether Ltail is supplied we either construct the mass matrix containing L on the diagonals
+        # OR we construct the inverse of this matrix containing inverse inductances and inverse masses.
+        if resonator_has_tail:
+            Minv = np.diag(np.array([1/L1 + 1/L3] + [1/L2 + 1/L3] + [1/m_e] * (2 * num_electrons)))
+            Minv[0, 1] = Minv[1, 0] = -1/L3
+        else:
+            M = np.diag(np.array([La] + [Lb] + [m_e] * (2 * num_electrons)))
 
         # Set up the kinetic matrix next
-        Kij_plus, Kij_minus, Lij = np.zeros(np.shape(M)), np.zeros(
-            np.shape(M)), np.zeros(np.shape(M))
+        Kij_plus, Kij_minus, Lij = np.zeros(2 * num_electrons + 2), np.zeros(
+            2 * num_electrons + 2), np.zeros(2 * num_electrons + 2)
         K = np.zeros((2 * num_electrons + 2, 2 * num_electrons + 2))
 
         # Row 1 and column 1 only have bare cavity information, and
         # cavity-electron terms
-        K[:2, :2] = np.array([[(C2 + Cdot) / D, Cdot / D],
-                              [Cdot / D, (C1 + Cdot) / D]])
+        K[:2, :2] = np.array([[(Cb + Cdot) / D, Cdot / D],
+                              [Cdot / D, (Ca + Cdot) / D]])
 
         K[2:num_electrons + 2, 0] = K[0, 2:num_electrons + 2] = q_e / D * \
-            ((C2 + Cdot) * self.Ex_up(xe, ye) + Cdot * self.Ex_down(xe, ye))
+            ((Cb + Cdot) * self.Ex_up(xe, ye) + Cdot * self.Ex_down(xe, ye))
         K[2:num_electrons + 2, 1] = K[1, 2:num_electrons + 2] = q_e / D * \
-            ((C1 + Cdot) * self.Ex_down(xe, ye) + Cdot * self.Ex_up(xe, ye))
+            ((Ca + Cdot) * self.Ex_down(xe, ye) + Cdot * self.Ex_up(xe, ye))
 
         K[num_electrons + 2:2 * num_electrons + 2, 0] = K[0, num_electrons + 2:2 * num_electrons +
-                                                          2] = q_e / D * ((C2 + Cdot) * self.Ey_up(xe, ye) + Cdot * self.Ey_down(xe, ye))
+                                                          2] = q_e / D * ((Cb + Cdot) * self.Ey_up(xe, ye) + Cdot * self.Ey_down(xe, ye))
         K[num_electrons + 2:2 * num_electrons + 2, 1] = K[1, num_electrons + 2:2 * num_electrons +
-                                                          2] = q_e / D * ((C1 + Cdot) * self.Ey_down(xe, ye) + Cdot * self.Ey_up(xe, ye))
+                                                          2] = q_e / D * ((Ca + Cdot) * self.Ey_down(xe, ye) + Cdot * self.Ey_up(xe, ye))
 
         kij_plus = np.zeros((num_electrons, num_electrons))
         kij_minus = np.zeros((num_electrons, num_electrons))
@@ -170,7 +222,12 @@ class EOMSolver:
         K[2:num_electrons + 2, num_electrons + 2:2 * num_electrons + 2] = Lij
         K[num_electrons + 2:2 * num_electrons + 2, 2:num_electrons + 2] = Lij
 
-        return K, M
+        if resonator_has_tail:
+            # Don't want to just return the inverse of Minv, because it can contain very large numbers if Ltail is small.
+            # The different output is handled in solve_eom 
+            return Minv @ K, None
+        else:
+            return K, M
 
     def setup_eom(self, ri: ArrayLike,
                   resonator_dict: Dict) -> tuple[ArrayLike]:
@@ -291,7 +348,7 @@ class EOMSolver:
 
         Args:
             LHS (ArrayLike): K, analog of the spring constant matrix.
-            RHS (ArrayLike): M, analog of the mass matrix.
+            RHS (ArrayLike, optional): M, analog of the mass matrix. In the case of a resonator tail, one can set this to 0 as long as LHS = L^-1 C^-1
             sort_by_cavity_participation (bool, optional): Sorts the eigenvalues/vectors by the participation in the first element of the eigenvector. Defaults to True.
 
         Returns:
@@ -299,7 +356,12 @@ class EOMSolver:
         """
 
         # EVals, EVecs = np.linalg.eig(np.dot(np.linalg.inv(RHS), LHS))
-        EVals, EVecs = scipy.linalg.eigh(LHS, b=RHS)
+        if RHS is not None:
+            EVals, EVecs = scipy.linalg.eigh(LHS, b=RHS)
+        else:
+            # This case applies if there is a tail, in this case the EOM are different and we don't have 
+            # a separate RHS matrix from setup_eom_coupled_lc
+            EVals, EVecs = np.linalg.eig(LHS)
 
         if sort_by_cavity_participation:
             # The cavity participation is the first element of each
@@ -337,7 +399,7 @@ class EOMSolver:
         return eigenfrequencies[0] - self.f0
 
     def plot_eigenvector(self, electron_positions: ArrayLike,
-                         eigenvector: ArrayLike, length: float = 0.5, color: str = 'k') -> None:
+                         eigenvector: ArrayLike,  ax=None, length: float = 0.5, color: str = 'k', **kwargs) -> None:
         """Plots the eigenvector at the electron positions.
 
         Args:
@@ -348,6 +410,9 @@ class EOMSolver:
         """
         e_x, e_y = r2xy(electron_positions)
         N_e = len(e_x)
+
+        if ax is None:
+            ax = plt.gca()
 
         # The first index of the eigenvector contains the charge displacement, thus we look at the second index and beyond.
         # Normalize the vector to 'length'
@@ -361,8 +426,8 @@ class EOMSolver:
 
         for e_idx in range(len(e_x)):
             width = 0.025
-            plt.arrow(e_x[e_idx] * 1e6, e_y[e_idx] * 1e6, dx=dxs[e_idx], dy=dys[e_idx], width=width, head_length=1.5 * 3 * width, head_width=3.5 * width,
-                      edgecolor='k', lw=0.4, facecolor=color)
+            ax.arrow(e_x[e_idx] * 1e6, e_y[e_idx] * 1e6, dx=dxs[e_idx], dy=dys[e_idx], width=width, head_length=1.5 * 3 * width, head_width=3.5 * width,
+                      edgecolor='k', lw=0.4, facecolor=color, **kwargs)
 
     def animate_eigenvectors(self, fig, axs_list: list, eigenvector_list: List[ArrayLike], electron_positions: ArrayLike, marker_size: float = 10,
                              amplitude: float = 0.5e-6, time_points: int = 31, frame_interval_ms: int = 10):

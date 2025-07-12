@@ -444,7 +444,7 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
 
         return best_res
 
-    def plot_electron_positions(self, res: dict, ax=None, color: str = 'mediumseagreen', marker_size: float = 10.0) -> None:
+    def plot_electron_positions(self, res: dict, ax=None, color: str = 'mediumseagreen', marker_size: float = 10.0, shadow: bool=True, **kwargs) -> None:
         """Plot electron positions obtained from get_electron_positions
 
         Args:
@@ -455,11 +455,17 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         x, y = r2xy(res['x'])
 
         if ax is None:
-            plt.plot(x*1e6, y*1e6, 'ok', mfc=color, mew=0.5, ms=marker_size,
-                     path_effects=[pe.SimplePatchShadow(), pe.Normal()])
+            if shadow:
+                plt.plot(x*1e6, y*1e6, 'ok', mfc=color, mew=0.5, ms=marker_size,
+                        path_effects=[pe.SimplePatchShadow(), pe.Normal()], **kwargs)
+            else:
+                plt.plot(x*1e6, y*1e6, 'ok', mfc=color, mew=0.5, ms=marker_size, **kwargs)
         else:
-            ax.plot(x*1e6, y*1e6, 'ok', mfc=color, mew=0.5, ms=marker_size,
-                    path_effects=[pe.SimplePatchShadow(), pe.Normal()])
+            if shadow:
+                ax.plot(x*1e6, y*1e6, 'ok', mfc=color, mew=0.5, ms=marker_size,
+                        path_effects=[pe.SimplePatchShadow(), pe.Normal()], **kwargs)
+            else:
+                ax.plot(x*1e6, y*1e6, 'ok', mfc=color, mew=0.5, ms=marker_size, **kwargs)
 
     def animate_voltage_sweep(self, fig, ax, list_of_voltages: list, list_of_electron_positions: list, coor: tuple = (0, 0), dxdy: tuple = (2, 2), 
                               frame_interval_ms: int = 10, print_voltages: bool = False) -> matplotlib.animation.FuncAnimation:
