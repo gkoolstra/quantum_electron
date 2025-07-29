@@ -444,7 +444,7 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
 
         return best_res
 
-    def plot_electron_positions(self, res: dict, ax=None, color: str = 'mediumseagreen', marker_size: float = 10.0) -> None:
+    def plot_electron_positions(self, res: dict, ax=None, color: str = 'mediumseagreen', marker_size: float = 10.0, shadow: bool=True, **kwargs) -> None:
         """Plot electron positions obtained from get_electron_positions
 
         Args:
@@ -455,13 +455,20 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
         x, y = r2xy(res['x'])
 
         if ax is None:
-            plt.plot(x*1e6, y*1e6, 'ok', mfc=color, mew=0.5, ms=marker_size,
-                     path_effects=[pe.SimplePatchShadow(), pe.Normal()])
+            if shadow:
+                plt.plot(x*1e6, y*1e6, 'ok', mfc=color, mew=0.5, ms=marker_size,
+                        path_effects=[pe.SimplePatchShadow(), pe.Normal()], **kwargs)
+            else:
+                plt.plot(x*1e6, y*1e6, 'ok', mfc=color, mew=0.5, ms=marker_size, **kwargs)
         else:
-            ax.plot(x*1e6, y*1e6, 'ok', mfc=color, mew=0.5, ms=marker_size,
-                    path_effects=[pe.SimplePatchShadow(), pe.Normal()])
+            if shadow:
+                ax.plot(x*1e6, y*1e6, 'ok', mfc=color, mew=0.5, ms=marker_size,
+                        path_effects=[pe.SimplePatchShadow(), pe.Normal()], **kwargs)
+            else:
+                ax.plot(x*1e6, y*1e6, 'ok', mfc=color, mew=0.5, ms=marker_size, **kwargs)
 
-    def animate_voltage_sweep(self, fig, ax, list_of_voltages: list, list_of_electron_positions: list, coor: tuple = (0, 0), dxdy: tuple = (2, 2), frame_interval_ms: int = 10) -> matplotlib.animation.FuncAnimation:
+    def animate_voltage_sweep(self, fig, ax, list_of_voltages: list, list_of_electron_positions: list, coor: tuple = (0, 0), dxdy: tuple = (2, 2), 
+                              frame_interval_ms: int = 10, print_voltages: bool = False) -> matplotlib.animation.FuncAnimation:
         """
         Animates a voltage sweep by updating the voltage and electron positions over time. 
         This function only animates the sweep, it does not calculate the electron positions. This needs to be done beforehand.
@@ -509,10 +516,11 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
 
         text_boxes = list()
         initial_voltages = list_of_voltages[0]
-        for k, electrode in enumerate(initial_voltages.keys()):
-            text_boxes.append(ax.text(xmin - 0.75,
-                                      ymax - k * 0.075 * (ymax - ymin),
-                                      f"{electrode} = {initial_voltages[electrode]:.2f} V", ha='right', va='top'))
+        if print_voltages:
+            for k, electrode in enumerate(initial_voltages.keys()):
+                text_boxes.append(ax.text(xmin - 0.75,
+                                        ymax - k * 0.075 * (ymax - ymin),
+                                        f"{electrode} = {initial_voltages[electrode]:.2f} V", ha='right', va='top'))
 
         ax.set_aspect('equal')
         ax.set_xlabel("$x$"+f" ({chr(956)}m)")
@@ -536,10 +544,11 @@ class FullModel(EOMSolver, PositionSolver, PotentialVisualization):
             pts_data[0].set_xdata(final_x * 1e6)
             pts_data[0].set_ydata(final_y * 1e6)
 
-            # Update the voltages to the left of the image
-            for k, electrode in enumerate(voltages.keys()):
-                text_boxes[k].set_text(
-                    f"{electrode} = {voltages[electrode]:.2f} V")
+            if print_voltages:
+                # Update the voltages to the left of the image
+                for k, electrode in enumerate(voltages.keys()):
+                    text_boxes[k].set_text(
+                        f"{electrode} = {voltages[electrode]:.2f} V")
 
             return (img_data, pts_data, text_boxes)
 

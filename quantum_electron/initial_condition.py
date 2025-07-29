@@ -140,44 +140,17 @@ class InitialCondition:
         Returns:
             tuple: bounds, np.min(nonzero_dot), np.max(nonzero_dot)
         """
-        found1 = False
-        found2 = False
+        # Returns the x-indices for which dot is non-zero
+        x_slice = np.where(np.abs(np.mean(dot, axis=1)) > 0)[0]
+        
+        # Returns the y-indices for which dot is non-zero
+        y_slice = np.where(np.abs(np.mean(dot, axis=0)) > 0)[0]
+        
+        x1 = self.potential_dict['xlist'][x_slice[0]]
+        x2 = self.potential_dict['xlist'][x_slice[-1]]
 
-        for yi in range(len(dot[0, :])):
-            empty_row = True
-            for xi in dot[:, yi]:
-                if xi > 0:
-                    empty_row = False
-
-            if not empty_row and not found1:
-                found1 = True
-                y1 = self.potential_dict['ylist'][yi]
-
-            if empty_row and found1:
-                found2 = True
-                y2 = self.potential_dict['ylist'][yi]
-
-            if found1 and found2:
-                break
-
-        found1 = False
-        found2 = False
-        for xi in range(len(dot[:, 0])):
-            empty_column = True
-            for yi in dot[xi, :]:
-                if yi > 0:
-                    empty_column = False
-
-            if not empty_column and not found1:
-                found1 = True
-                x1 = self.potential_dict['xlist'][xi]
-
-            if empty_column and found1:
-                found2 = True
-                x2 = self.potential_dict['xlist'][xi]
-
-            if found1 and found2:
-                break
+        y1 = self.potential_dict['ylist'][y_slice[0]]
+        y2 = self.potential_dict['ylist'][y_slice[-1]]
 
         bounds = [x1, x2, y1, y2]
         nonzero_dot = dot[dot != 0]
